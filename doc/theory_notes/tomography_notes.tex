@@ -1,0 +1,415 @@
+\documentclass[a4paper, 12pt]{book}
+%\usepackage[active]{srcltx}
+\usepackage[czech]{babel}
+\usepackage[utf8]{inputenc}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools} % needs texlive-latex3 package (Ubuntu)
+
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage[vlined]{algorithm2e}
+\hypersetup{backref,colorlinks=true, raiselinks=true}
+%
+\theoremstyle{definition}
+\newtheorem{theorem}{Věta}[section]
+\newtheorem{proposition}[theorem]{Tvrzení}
+\newtheorem{definition}[theorem]{Definice}
+\newtheorem{remark}[theorem]{Poznámka}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Důsledek}
+\newtheorem{example}[theorem]{Příklad}
+\newtheorem{exercise}[theorem]{Cvičení}
+
+%\numberwithin{equation}{document}
+%
+\def\div{{\rm div}}
+\def\Lapl{\Delta}
+\def\grad{\nabla}
+\def\supp{{\rm supp}}
+\def\dist{{\rm dist}}
+%\def\chset{\mathbbm{1}}
+\def\chset{1}
+%
+\def\Tr{{\rm Tr}}
+\def\to{\rightarrow}
+\def\weakto{\rightharpoonup}
+\def\imbed{\hookrightarrow}
+\def\cimbed{\subset\subset}
+\def\range{{\mathcal R}}
+\def\leprox{\lesssim}
+\def\argdot{{\hspace{0.18em}\cdot\hspace{0.18em}}}
+\def\Distr{{\mathcal D}}
+\def\calK{{\mathcal K}}
+\def\FromTo{|\rightarrow}
+\def\convol{\star}
+\def\impl{\Rightarrow}
+\DeclareMathOperator*{\esslim}{esslim}
+\DeclareMathOperator*{\esssup}{ess\,supp}
+\DeclareMathOperator{\ess}{ess}
+\DeclareMathOperator{\osc}{osc}
+\DeclareMathOperator{\curl}{curl}
+\DeclareMathOperator{\cotg}{cotg}
+\def\Lin{\mathit{Lin}}
+\def\dx{\d x}
+%
+%\def\Ess{{\rm ess}}
+%\def\Exp{{\rm exp}}
+%\def\Implies{\Longrightarrow}
+%\def\Equiv{\Longleftrightarrow}
+% ****************************************** GENERAL MATH NOTATION
+\def\Real{{\rm\bf R}}
+\def\Rd{{{\rm\bf R}^{\rm 3}}}
+\def\RN{{{\rm\bf R}^N}}
+\def\D{{\mathbb D}}
+\def\Nnum{{\rm\bf N}}
+\def\Qnum{{\rm\bf Q}}
+\def\Measures{{\mathcal M}}
+\def\d{\,{\rm d}}               % differential
+\def\sdodt{\genfrac{}{}{}{1}{\rm d}{{\rm d}t}}
+\def\dodt{\genfrac{}{}{}{}{\rm d}{{\rm d}t}}
+%
+\def\vc#1{\mathbf{\boldsymbol{#1}}}     % vector
+\def\tn#1{{\mathbb{#1}}}    % tensor
+\def\abs#1{\lvert#1\rvert}
+\def\Abs#1{\bigl\lvert#1\bigr\rvert}
+\def\bigabs#1{\bigl\lvert#1\bigr\rvert}
+\def\Bigabs#1{\Big\lvert#1\Big\rvert}
+\def\ABS#1{\left\lvert#1\right\rvert}
+\def\norm#1{\bigl\Vert#1\bigr\Vert} %norm
+\def\close#1{\overline{#1}}
+\def\inter#1{#1^\circ}
+\def\eqdef{\mathrel{\mathop:}=}     % defining equivalence
+\def\where{\,|\,}                    % "where" separator in set's defs
+\def\timeD#1{\dot{\overline{{#1}}}}
+%
+% ******************************************* USEFULL MACROS
+\def\RomanEnum{\renewcommand{\labelenumi}{\rm (\roman{enumi})}}   % enumerate by roman numbers
+\def\rf#1{(\ref{#1})}                                             % ref. shortcut
+\def\prtl{\partial}                                        % partial deriv.
+\def\Names#1{{\scshape #1}}
+\def\rem#1{{\parskip=0cm\par!! {\sl\small #1} !!}}
+\def\vysl#1{\par$[$ #1 $]$}
+\def\df#1{\emph{#1}}
+\def\todo#1{{\color{green}TODO:} #1}
+
+%\newenvironment{pmatrix*}[1][\unskip]{\left(\begin{array}[ #1]}{\end{array}\right)}
+
+%
+%
+% ******************************************* DOCUMENT NOTATIONS
+% document specific
+%***************************************************************************
+%
+\addtolength{\textwidth}{2cm}
+\addtolength{\vsize}{2cm}
+\addtolength{\topmargin}{-1cm}
+\addtolength{\hoffset}{-1cm}
+\begin{document}
+\parskip=2ex
+\parindent=0pt
+
+\section{Basic equations}
+The resistivity method use multipoint measurements of the ground (or the media) resistivity in order to reconstruct 
+the resistivity spatial distribution (tomography) which in turn may indicate geological structure. The resistivity is related to
+the geological parameters as: the water content, the mineral content, other fluids, porosity.
+
+Essential equation is the Ohm's law:
+\[
+    \vc J = \sigma \vc E
+\]
+where $\vc J$ is the electric current density $[]$, $\sigma$ is the conductivity $[]$ and $E$ is the electric field intensity $[Vm^{-1}]$.
+The resistivity $\rho=1/\sigma$. Intensity is potential field, thus:
+\[
+    \vc E = -\grad u
+\]
+where $u$ is the electric potential $[V]$
+Combinig these with conservation of the electric charge, we get:
+\[
+    \div \vc J = f
+\]
+where $f$ is the density of electric sources, usually two or more point sources.
+
+
+First, let us consider a simplest case whole space of homogeneous material with a single point source
+\[
+    f(\vc x)=I\delta(\vc x - \vc x_0)
+\]
+located at point $\vc x_0$. We get the radial solution:
+\[
+    u(\vc x) = \frac{\rho I}{4\pi |\vc r|}, \quad \vc r = \vc x - \vc x_0.
+\]
+This can be derived as a limit case of a oter domain of a sphere of radius $R$ and 
+taking limit as $R\to 0$. This also justifies the scaling factor $1/4\pi$. 
+
+For the case of a halfspace domain with homogeneous Neuman BC we get:
+\[
+    u(\vc x) = \frac{\rho I}{2\pi |\vc r|}, \quad \vc r = \vc x - \vc x_0.
+\]
+
+
+\section{Resistivity mesurement}
+Practical setup use $4$ electrodes: two current electrodes $C1$, $C2$  and two potential electrodes $P1$, $P2$.
+The constant current $I$ is mainteined between $C1$ an $C2$ while the potential difference $du$ is measured between $P1$, $P2$.'s
+
+
+Assuming a zero current through the potential electrodes, we have solution:
+\[
+    u(\vc x) = \frac{I\rho}{2\pi} \Big( \frac{1}{|\vc x - \vc x_{C1}|} - \frac{1}{|\vc x - \vc x_{C2}|}\Big).
+\]
+Then for the potential difference we have:
+\[
+    du = \frac{I\rho}{2\pi} \Big( \frac{1}{|\vc x_{P1} - \vc x_{C1}|} - \frac{1}{|\vc x_{P1} - \vc x_{C2}|}
+    -\frac{1}{|\vc x_{P2} - \vc x_{C1}|} + \frac{1}{|\vc x_{P2} - \vc x_{C2}|} \Big).
+\]
+or
+\[
+    du = \frac{I\rho}{2\pi} \Big( \frac{1}{r_{P1C1}} - \frac{1}{r_{P1C2}} - \frac{1}{r_{P2C1}} + \frac{1}{r_{P2C2}} \Big) = \frac{I\rho}{k}.
+\]
+where $k$ is a geometry factor.
+
+Considering the material homogeneous we can determine \emph{apparent resistivity} as:
+\[
+    \rho = k\frac{du}{I}.
+\]
+
+\subsection{Aparent resistivity, general geometry}
+Apparent resistivity is computed as:
+\[
+    \rho_a = \frac{\overline{du}}{I\, dU}, \quad dU = U(P2) - U(P1), 
+\]
+where $U$ is solution to the problem:
+\[
+   -\Lapl U = \delta_{C2} - \delta_{C1}.
+\]
+
+
+
+
+\section{Inversion problems}
+
+
+\subsection{Tichonov regularization}
+Techniques used in inversion problems are very general and can be applied to wide range of forward models. We consider a general inverse problem
+to find a continuous and piecewise smooth field $m(\vc x)$, $\vc x\in \Omega$ such that the forward model $\vc F[m]$ match the observation vector $\overline{\vc F}$.
+
+The field parameter $m$ is found  as a minimizer of:
+\[
+    \Phi[m] = \Phi_m[m] + \beta\Phi_r[m].
+\]
+The cost functional consists of the misfit cost:
+\[
+    \Phi_m[m] = \sum_{i\in I} \frac{1}{\epsilon_i^2} |F_i[m] - \overline{F}_i|^2 = |\tn D (\vc F[m] - \overline{\vc F})|_2^2
+\]
+where $\epsilon_i$ is standard deviance of a single obseravation $i$ from set of observations $I$, this forms a weight diagonal matrix $D_{i,i} = 1/\epsilon_i$. 
+
+As the problem is vastly underdetermined, we have to use a suitable regularization functional that reflects our appriori knowledge about the field $m$:
+\[
+    \Phi_r[\vc m] = \norm{ m - m_0}_{2,\Omega}^2 + \int_\Omega \grad (m - m_0)^T \tn K \grad (m - m_0).
+\]
+This regularization prescribes the appriori field values $m_0$ and penalizes the gradients. The tensor field $\tn K$ can be used for:
+\begin{itemize}
+ \item take less smoothing at places of possible discontinuities
+ \item smooth more far from the measurement
+ \item count for anisotropy, e.g. in the case of 1D measurement in a tunnel we use cylindric coordinates and 
+ penalize changes in $\phi$ coordinate.
+\end{itemize}
+In principle $\tn K$ can control the regularization better then a single regularization parameter $\beta$ so we should 
+find suitable methods how to change $\tn K$ e.g. to find discontinuities automatically.
+
+The field $m$ is assumed in a form of linear combination: 
+\[
+    m(\vc x) = \sum_{l=1}^L m_l \psi_l(\vc x)
+\]
+where $\psi_l$ are the base functions of the admissible space  $V_{m}$. 
+
+The optimality conditions are:
+\[
+   0  = \frac12\prtl_{\vc m} \Phi = \tn J[\vc m]^T \tn D^2 (\vc F[\vc m] - \overline{\vc F}) + \beta \tn A (\vc m - \vc m_0) 
+\]
+where $\tn J=\prtl_{\vc m} \vc F$ is the sensitivity matrix $I\times L$ and $\tn A$ is a regularization matrix $L\times L$:
+\[
+   A_{l, k} = \int_\Omega \psi_l \psi_k + \grad \psi_l^T \tn K \grad \psi_k \d \vc x.
+\]
+
+
+Then we expand $\vc F$ as:
+\[
+    F[\vc m  + \vc d] = F[\vc m] + \tn J[\vc m] \vc d + \mathcal O(\vc d^2).
+\]
+
+Once $m_k$ is computed we determine the search direction $\vc d_{k}$ by solving the linear system:
+\begin{equation}
+   \label{eq::step-system}
+   \Big(\tn J_k^T \tn D \tn J_k + \beta_k \tn A \Big) \vc d =
+   -\tn J_k^T(\vc F_k - \overline{\vc F}) - \beta_k \tn A (\vc m_k - \vc m_0).
+\end{equation}
+
+Finally we obtain following general algorithm:
+
+{\bf Algorithm 1}
+\begin{enumerate}
+ \item Set $m_0$ for $k=0$.
+ \item Evaluate $\vc F_k$ and $\tn J_k$ for $\vc m_k$ (see \ref{sec:evaluation}).
+ \item Determine $\beta_k$ (see \ref{sec:beta_choice})
+ \item Setup and solve \eqref{eq::step-system} for $\vc d_k$
+ \item Find $\lambda_k$ that satisfy suficient decrerase condition (see \ref{sec:linesearch}), set:
+    $\vc m_{k+1} = \vc m_k + \lambda_k \vc d_k$        
+ \item If no convergence criteria is satisfied (see \ref{sec:conv_crit}) continue to 2.
+\end{enumerate}
+
+\subsection{Forward model evaluation}
+\label{sec:evaluation}
+Every iteration of Algorithm 1 request evaluation of the sensitivity matrix $\vc J[m_k]$ and one or more evaluations of 
+the forward model $\vc F[m_{k,\lambda}]$. In the case of electrical resistivity (ER) every element of $\vc F[\vc m]$ 
+corresponds to a single measurement $i \in I$, given by the current $I$ and positions of points $C1$, $C2$, $P1$, $P2$. 
+In particular:
+\[
+    F_i[m] = u^i(\vc x^i_{P1}) - u^i(\vc x^i_{P2}),\ i\in I,
+\]
+where $u^i[m]$ is the solution of:
+\[
+  -\div \big(m \grad u^i \big) = I (\delta_{C1} - \delta_{C2}).
+\]
+
+The solution $u$ is replaced by the numerical solution $\tilde u$,
+\[
+    \tilde u(\vc x) = \sum_{j=1}^n U_j \phi(\vc x).
+\]
+Where the vector $\vc U$ is a solution of a system:
+\[
+    \tn L[\vc \sigma] \vc U_i = \vc b_i
+\]
+with
+\[
+    \tn L = \sum_{l=1}^L \vc m \tn L^l 
+\]
+and
+\[
+    b_{i,j} = I(\phi_j(\vc x^i_{C1}) - \phi_j(\vc x^i_{C2})).
+\]
+Introducing similarly
+\[
+ c_{i,j} = \phi_j(\vc x^i_{P1}) - \phi_j(\vc x^i_{P2}),
+\]
+we can use matrices $\tn B$ and $\tn C$ to obtain:
+\[
+    \vc F[\vc m] = \tn C^T \tn L[\vc m]^{-1} \tn B.
+\]
+However this assume same discretization (mesh) for every measurement. Computing a single inverse 
+may seem attractive, but for large systems (fine mesh necessary if it has to common to all meassurements)
+it is better to use a multigrid to compute $\vc F$ in time $\mathcal O(L\times n)$ where $n$ is average number of unknowns 
+in the refined grid for a single measurement:
+\[
+    F_i[\vc m] = \vc c_i^T \vc u_i, \quad \tn L_i[\vc m]\vc u_i =  \vc b_i.
+\]
+
+Differenciating this by $\vc m$ we get for $\tn J$:
+\[
+    J_{i,l} = \vc c_i^T \tn L_i^{-1} \tn L_i^l \tn L_i^{-1} \vc b_i
+\]
+or
+\[
+    J_{i,l} = \vc w_i^T \tn L_i^l \vc u_i, \quad \tn L_i \vc u_i = \vc b_i, \quad \tn L_i \vc w_i = \vc c_i.
+\]
+
+For every measurement $i$ we store: the mesh, set of XFEM functions, $\vc u_{i}$, $\vc w_{i}$. Updating $m_k$ to $m_{k+1}$
+leads to solving a perturbed problem:
+\[
+   \Big(\tn L[m_k] + \lambda \tn L[d_k]\Big) \vc u = \vc b
+\]
+using the matrix free approach, we can just perform a few CG iterations to update $\vc u_i$ or apply single multigird cycle.
+
+All together the complexity of single  $\tn J$ evaluation would be about 
+$\mathcal O(I \times n + I \times L)$ assuming that $\tn A_i^l$ is a local matrix. The evaluation of $\vc F$ have similar complexity.
+Forming the system \eqref{eq::step-system} is about $\mathcal O(I \times L \times L)$ and solution of the system is of a similar complexity.
+If $I \ll L$ it would be better to solve the system in matrix free fassion since Application of the operator have complexity:
+$\mathcal O(I \times L)$ with good preconditioning we can allow $I \approx 1000$, $L\approx 10000$, $n\approx 10000$, inner times outer iterations $K\approx 1000$.
+Total about $10^10$ operations. Should be computable in several minutes.
+
+\subsection{Choosing regularization parameter $\beta$}
+\label{sec:beta_choice}
+Commonly used methods are: GCV (generalized cross validation), $L$-curve, discrepacy principle, 
+and AIC/BIC (Akaike/Bayessian information criterion). First three are described and compared in \cite{farquharson_2004}
+the last two are compared in \cite{burnham_2004}.
+
+\subsubsection{Discrepancy principle}
+If the misfit components are independent random variableas and true deviations $\epsilon_i$ are known the expected value for $\Phi_m \approx I$.
+so we try to choose $\beta$ that make this relation hold. We start with 
+\[
+  \beta_0 = \Phi_m[m_0]/ \Phi_r[m_0].
+\]
+At iteration $k$ we collect last three values of $\Phi_m$, find a fit by quadratic function $P_2(\beta)$ and solve:
+\[
+    P_2(\beta) = I.
+\]
+denoting $\beta^*$ the root closer to $\beta_{k-1}$, we set:
+\[
+    \beta_k = \max( c\beta_{k-1}, \beta^*).
+\]
+where $c$ is a decrease factor $c\in (0,1)$.
+
+\subsubsection{GCV}
+The GCV approach is described in \cite{haber_gcv_2000}. The principle is to find a parameter vector $\vc m_i[\beta]$ ommiting
+the $i$-th measurement from the data set and define the cross-validation function as:
+\[
+  CV(\beta) = \sum_i |F_i[\vc m_i] - \overline{F}_i |^2
+\]
+However this function is expensive to compute. First it is proved that $CV$ can be equivalently computed without solving $I$ least-square problems.
+Second, the sequence of problems in Krylov subspaces is solved and the function is minimized in the subspace of much smaller dimension. There the function minimization
+is feasible. The later approach can possibly be used to incrementaly increase dimension of the $V_{\vc m}$ space.
+
+
+
+
+\subsection{Linesearch}
+\label{sec:linesearch}
+Simplest linesearch is to find $\lambda_k$ such that:
+\[
+    \Phi[\sigma_{k+1}] \le \Phi[\sigma_k]
+\]
+However more appropriate is Armijo's rule \cite{wiki_backtracking_2017} that accepts $\lambda$ when there is sufficiant 
+decrease in the cost function:
+\[
+    \Phi[\vc \sigma_{k} + \lambda \vc d_k] \le \Phi[\sigma_k] + \mu \lambda \grad \Phi^T \vc d_k.
+\]
+where $\mu \in (0.01,0.3)$ is a decrease parameter. 
+
+
+\subsection{Convergence criteria}
+\label{sec:conv_crit}
+
+
+
+
+\subsection{Mesh refinement}
+
+\subsection{Adaptivity of the $\sigma$ space}
+
+\subsection{GREIT framework}
+Electrical Impedance Tomography (EIT) applies same physics to the human body. As the physics is the same 
+some methods and ideas can be used in both fields. Main difference in geophysical applications is:
+external domain, smaller electrodes, no electrode movement.
+
+GREIT (Gratz consensus Reconstruction algorithm for EIT) is a linear method where a matrix $R$ is found to map measurement 
+$\overline{\vc F}$ vector to the field vector $\vc m$. The reconstruction matrix is found as a fit to a training set, this is possible 
+due to similar geometry. Similar approach could be used to tunnels, precomputing usual geometries.
+
+
+\section{Questions}
+Klara's prezentation:
+\begin{itemize}
+ \item Which BC on extenal boundary? No flow. Margine min 2x dist of electrodes 
+ \item How big domain is neccessary compared to the measurement area (line)?
+ \item Is it usual to know devitions of the measurement? How they are determined?
+\end{itemize}
+
+
+\bibliographystyle{unsrt}
+\bibliography{tomography_notes}
+
+
+\end{document}
