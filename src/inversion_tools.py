@@ -1,17 +1,21 @@
 from SimPEG.EM.Static import DC
 import numpy as np
 import bisect
+import time
+from functools import wraps
+import logging
 
 """
 TODO:
 - check that produced SimPEG Survey have no performance drawback, compare tim if we generate Survey by native tools or 
-  by our self.
+  by our self. Higher time of the full scheme is due to 10 times higher number of Tx pairs (16 vs. 163)
+  
 - Optimal scheme for 1d cable, 2d forward model. Select measurements with maximal sensitivity to the changes in conductivity parameters,
   i.e.  derivative of   dP / (dC =  1)  by a parameter of a conductivity model.
   Algo:
   - for every conductivity parameter C
-    - for every (Ca, Cb) compute derivative of potential field by C
-        - find electrote with minimal sensitivity set to be Pa
+    - for every Tx pair (Ca, Cb) compute derivative of potential field by C
+        - find Rx electrode with minimal sensitivity set to be Pa
         - find given number of electrodes with maximal sensitivity to be Pb
         - set quality of (Ca, Cb) pair to average of sensitivity of Pb - Pa, for selected Pb points
     - sort (Ca, Cb) pairs according to the quality metric
@@ -22,7 +26,7 @@ TODO:
 class PointSet:
 
     @staticmethod
-    def points_line(start, end, n_points):
+    def line(start, end, n_points):
         """
         Make single cable PointSet.
         :param start: np.array [x,y,z] of the first point.
@@ -36,6 +40,7 @@ class PointSet:
 
     def __init__(self):
         self.cables = []
+        self.cable_start = []
 
     def add_cable(self, poly_line, n_points=None):
         """
@@ -65,11 +70,14 @@ class PointSet:
                 loc = poly_line[end_pt] * tt + poly_line[end_pt-1] * (1 - tt)
                 points.append(loc)
 
-        self._append(points)
+        self._append_cable(points)
         return len(self.cables) - 1
 
     def _append_cable(self, points):
-        start = self.cable_start[-1] + len(self.cables[-1])
+        if self.cables:
+            start = self.cable_start[-1] + len(self.cables[-1])
+        else:
+            start = 0
         self.cables.append(points)
         self.cable_start.append(start)
 
@@ -109,8 +117,11 @@ class Survey:
     """
     def __init__(self, point_set):
         # PointSet instance
+
         self.points = point_set
         self.measurements = []
+
+        self._simpeg_survey = None
 
     def clear(self):
         """
@@ -119,6 +130,7 @@ class Survey:
         self.measurements = []
 
     def _append(self, m):
+        self._simpeg_survey = None
         self.measurements.append(tuple(m))
 
     def _for_all_cables(self, fn, cables):
@@ -170,7 +182,7 @@ class Survey:
                     self._append([i_ca, i_cb, i_pa, i_pb])
 
 
-    def schlumberger_inv_scheme(self, cables):
+    def schlumberger_inv_scheme(self, cables=None):
         """
         Create measurements using "inversed Schlumberger scheme" on every
         one of given cables.
@@ -192,29 +204,79 @@ class Survey:
                 self._append([i_ca, i_cb, i_pa, i_pb])
 
 
+    def marching_cc_pair(self, cables=None):
+        """
+        Create measurements using "inversed Schlumberger scheme" on every
+        one of given cables.
 
-    def get_simpeg_survey(self):
+        scheme: CA - 1 - CB - n - PA - 1 - PB
+        For every possible value of 'n; we move this scheme along the cable.
+
+        :param cables: Indices of cables, None for all.
+        """
+        self._for_all_cables(self._marching_cc_pair, cables)
+
+    def _marching_cc_pair(self, cable):
+        n_points = len(cable)
+        for i_ca in range(n_points-3):
+            i_cb = i_ca + 1
+            for i_pa in range(i_cb+1, n_points-2):
+                i_pb = i_pa + 1
+                self._append([i_ca, i_cb, i_pa, i_pb])
+
+    @property
+    def simpeg_survey(self):
         """
         Create the measurement setup as an instance of DC Survey.
         :return: DC.Survey instance
         """
-        probe_points = self.points.all_points
+        if self._simpeg_survey is None:
+            probe_points = self.points.all_points
 
-        group_by_cc = {}
-        for ca, cb, pa, pb in self.measurements:
-            group_by_cc.setdefault((ca,cb), [])
-            group_by_cc[(ca,cb)].append((pa,pb))
+            group_by_cc = {}
+            for ca, cb, pa, pb in self.measurements:
+                group_by_cc.setdefault((ca,cb), [])
+                group_by_cc[(ca,cb)].append((pa,pb))
 
-        src_list=[]
-        sorted = [ (cc, pp) for cc, pp in group_by_cc.items()]
-        sorted.sort()
-        for cc, pp_list in sorted:
-            rx_list = [DC.Rx.Dipole(probe_points[pp[0],:], probe_points[pp[1],:]) for pp in pp_list]
-            src = DC.Src.Dipole(rx_list, probe_points[cc[0],:], probe_points[cc[1],:])
-            src_list.append(src)
-        survey = DC.Survey(src_list)
-        return survey
+            src_list=[]
+            sorted = [ (cc, pp) for cc, pp in group_by_cc.items()]
+            sorted.sort()
+            for cc, pp_list in sorted:
+                rx_list = [DC.Rx.Dipole(probe_points[pp[0],:], probe_points[pp[1],:]) for pp in pp_list]
+                src = DC.Src.Dipole(rx_list, probe_points[cc[0],:], probe_points[cc[1],:])
+                src_list.append(src)
+            self._simpeg_survey = DC.Survey(src_list)
 
+        return self._simpeg_survey
+
+
+    def plot_measurements(self, ax):
+        """
+        Plot survey scheme to ax Axis.
+        """
+        survey = self.simpeg_survey
+        for i, cc in enumerate(survey.srcList):
+            X, Y = zip(*cc.loc)
+            ax.plot(X, np.array(Y) + i, 'ro', ms=1)
+            for pp in cc.rxList:
+                col = 'bo'
+                for loc in pp.locs:
+                    for x, y in loc:
+                        ax.plot(x, y + i, col, ms=1)
+                    col = 'go'
+                # ax.plot(X[0], Y[0] + i, 'b^', ms = 1)
+                # ax.plot(X[1], Y[1] + i, 'bv', ms=1)
+
+    def print_summary(self):
+        survey = self.simpeg_survey
+        n_cc = len(survey.srcList)
+        n_pp = 0
+        n_locs = 0
+        for cc in survey.srcList:
+            n_pp += len(cc.rxList)
+            for pp in cc.rxList:
+                n_locs += len(pp.locs)
+        print( "#cc : {}\n#pp : {} ({} per cc)\n#loc: {} ({} per pp)".format(n_cc, n_pp, n_pp/n_cc, n_locs, n_locs/n_pp))
 
 # class MeasurementScheme:
 #     """
@@ -224,70 +286,28 @@ class Survey:
 #
 #     def __init__(self, points):
 #
+# TODO:
+# - elementary shapes in fixed position, minimize number of parameters
+# - implement shape transformation (affine)
+# - implement _bbox functions, trivial for elementary shapes and transformed, aabb for union, ?? intersection
+# - implement general plane projection and contour in terms of _inside and _bbox
 
-class Shape:
-    def inside(self, points):
-        """
-        :param points: List of points, array of points (N, 3)
-        :return: Array of flags, True if corresponding point is inside the shape.
-        """
-        points = np.atleast_2d(np.array(points))
-        result = self._inside(points)
-        if len(result) == 1:
-            return result[0]
-        return result
 
-class Sphere(Shape):
+
+
+def time_func(f):
     """
-    A sphere in 3d space.
+    Decorator to time a function (every call)
+    :param f:
+    :return:
     """
-    def __init__(self, centre, radius):
-        """
-        :param centre: np.array, [x,y,z]
-        :param radius: r >= 0
-        """
-        self.centre = np.array(centre)
-        self.r = radius
-
-    def _inside(self, points):
-        return np.linalg.norm(points - self.centre[None, :], axis=1) < self.r
-
-class Cylinder(Shape):
-    """
-    Arbitrary positioned cylinder.
-    """
-    def __init__(self, a_pt, b_pt, radius):
-        """
-        :param a_pt: Center of bottom base.
-        :param b_pt: Center of top base.
-        :param radius: Cylinder radius.
-        """
-        self.axis_line = [np.array(a_pt), np.array(b_pt)]
-        self.r = radius
-
-    def _inside(self, points):
-        a_pt, b_pt = self.axis_line
-        line_vec = b_pt - a_pt
-        line_norm = np.linalg.norm(line_vec)
-        line_point = np.dot(points - a_pt[None, :], line_vec) / (line_norm ** 2)
-        projection = line_point[:, None] * line_vec[None, :] + a_pt[None, :]
-        flag = np.linalg.norm(points - projection, axis=1) < self.r
-        flag = np.logical_and(flag, 0 < line_point)
-        flag = np.logical_and(flag, line_point < 1)
-        return flag
-
-class AABox(Shape):
-    """
-    Axes aligned box.
-    """
-    def __init__(self, a_pt, b_pt):
-        min_pt = np.minimum(a_pt, b_pt)
-        max_pt = np.maximum(a_pt, b_pt)
-        self.corners = [min_pt, max_pt]
-
-    def _inside(self, points):
-        min_pt, max_pt = self.corners
-        return np.logical_and(np.all(min_pt[None, :] < points, axis=1), np.all(points < max_pt[None, :], axis=1))
-
-
-
+    @wraps(f)
+    def wrapper(self, *args, **kwargs):
+        counter = getattr(self, 'counter', None)
+        timer = - time.time()
+        out = f(self, *args, **kwargs)
+        timer += time.time()
+        f_name = self.__class__.__name__ + '.' + f.__name__
+        logging.debug("Time of {}: {}".format(f_name, timer))
+        return out
+    return wrapper
