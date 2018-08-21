@@ -199,34 +199,34 @@ def _runAsMain():
     slaInversion.title = slaInversion.title + ', '+ str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
     slaInversion.setupSolvePlotTheTask()
 
-    # slaInversion = SingleLinearArraySurveyInversion()
-    # slaInversion.tunnelParams.disTunnelDistance = 5
-    # slaInversion.tunnelParams.recalculateDependentParams()
-    # slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
-    # slaInversion.setupSolvePlotTheTask()
-    #
-    # slaInversion = SingleLinearArraySurveyInversion()
-    # slaInversion.tunnelParams.disTunnelDistance = 7
-    # slaInversion.tunnelParams.recalculateDependentParams()
-    # slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
-    # slaInversion.setupSolvePlotTheTask()
-    #
-    # # four linear array - different distance
-    # slaInversion = FourLinearArraySurveyInversion()
-    # slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
-    # slaInversion.setupSolvePlotTheTask()
-    #
-    # slaInversion = FourLinearArraySurveyInversion()
-    # slaInversion.tunnelParams.disTunnelDistance = 5
-    # slaInversion.tunnelParams.recalculateDependentParams()
-    # slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
-    # slaInversion.setupSolvePlotTheTask()
-    #
-    # slaInversion = FourLinearArraySurveyInversion()
-    # slaInversion.tunnelParams.disTunnelDistance = 7
-    # slaInversion.tunnelParams.recalculateDependentParams()
-    # slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
-    # slaInversion.setupSolvePlotTheTask()
+    slaInversion = SingleLinearArraySurveyInversion()
+    slaInversion.tunnelParams.disTunnelDistance = 5
+    slaInversion.tunnelParams.recalculateDependentParams()
+    slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
+    slaInversion.setupSolvePlotTheTask()
+
+    slaInversion = SingleLinearArraySurveyInversion()
+    slaInversion.tunnelParams.disTunnelDistance = 7
+    slaInversion.tunnelParams.recalculateDependentParams()
+    slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
+    slaInversion.setupSolvePlotTheTask()
+
+    # four linear array - different distance
+    slaInversion = FourLinearArraySurveyInversion()
+    slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
+    slaInversion.setupSolvePlotTheTask()
+
+    slaInversion = FourLinearArraySurveyInversion()
+    slaInversion.tunnelParams.disTunnelDistance = 5
+    slaInversion.tunnelParams.recalculateDependentParams()
+    slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
+    slaInversion.setupSolvePlotTheTask()
+
+    slaInversion = FourLinearArraySurveyInversion()
+    slaInversion.tunnelParams.disTunnelDistance = 7
+    slaInversion.tunnelParams.recalculateDependentParams()
+    slaInversion.title = slaInversion.title + ', ' + str(slaInversion.tunnelParams.disTunnelDistance) + ' distance'
+    slaInversion.setupSolvePlotTheTask()
 
     plt.show()
     print("-- Tunnel_SurveyInversion test code stop")
