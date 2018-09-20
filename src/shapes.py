@@ -19,6 +19,11 @@ class Transform:
             self.matrix = matrix
 
     def compose(self, other):
+        """
+        Compose self with other transformation.
+        :param other: Transform instance
+        :return: other * self
+        """
         matrix = np.dot(other.matrix[:, :3], self.matrix)
         matrix[:, -1] += other.matrix[:, -1]
         return Transform(matrix)
@@ -55,6 +60,23 @@ class Transform:
         matrix = self.matrix
         matrix[:3, :] = np.dot(rot_mat, self.matrix[:3, :])
         return Transform(matrix)
+
+    def rotate_to_vec(self, vec_in, vec_out):
+        vec_in = np.array(vec_in, dtype=float)
+        vec_out = np.array(vec_out, dtype=float)
+        base_1 = np.cross(vec_in, vec_out)
+        base_2_in = np.cross(vec_in, base_1)
+        base_2_in /= np.linalg.norm(base_2_in)
+        base_2_out = np.cross(vec_out, base_1)
+        base_2_out /= np.linalg.norm(base_2_out)
+
+        M_in = np.stack( (vec_in, base_1, base_2_in), axis = 1)
+        M_out = np.stack((vec_out, base_1, base_2_out), axis=1)
+        M = np.dot(M_out, np.linalg.inv(M_in))
+        b = np.zeros(3)
+        MM = np.concatenate( (M, b[:, None]), axis=1 )
+        return self.compose(Transform(MM))
+
 
     def invert(self):
         """
@@ -343,6 +365,15 @@ class Cylinder(Shape):
     """
     Z-axis cylinder with base at XY plane.
     """
+    @staticmethod
+    def from_axis( x0, x1, radius):
+        x0 = np.array(x0, dtype=float)
+        x1 = np.array(x1, dtype=float)
+        ref_ax = [0, 0, 1]
+        ax = x1 - x0
+        c = Cylinder(radius)
+        return c.transform(Transform().rotate_to_vec(ref_ax, ax)).shift(x0)
+
 
     def __init__(self, radius = 1.0, height = 1.0):
         """

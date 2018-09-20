@@ -115,13 +115,16 @@ class Survey:
       that is pair of current (transmitter Tx) electrodes CA, CB
       and pair of potential (recievers Rx) electrodes PA, PB.
     """
+
     def __init__(self, point_set):
         # PointSet instance
-
         self.points = point_set
         self.measurements = []
-
+        self.obs_values = None
+        self.obs_stds = None
         self._simpeg_survey = None
+        self._values = None
+
 
     def clear(self):
         """
@@ -130,6 +133,10 @@ class Survey:
         self.measurements = []
 
     def _append(self, m):
+        """
+        Append single measurement
+        :param m: [ca, cb, pa, pb]
+        """
         self._simpeg_survey = None
         self.measurements.append(tuple(m))
 
@@ -141,6 +148,25 @@ class Survey:
 
         for cable in cables:
             fn(cable)
+
+    def read_scheme(self, df, el_cols):
+        """
+        Read measurement points scheme.
+        :param df: Pandas data frame.
+        :param el_cols: Names of columns for electrodes [ ca, cb, pa, pb ].
+        """
+        el_mat = [ df[col] for col in el_cols ]
+        for row  in np.array(el_mat).T:
+            self._append(row)
+
+    def read_data(self, df, data_cols):
+        """
+        Read data for measurements.
+        :param df: Pandas data frame.
+        :param el_cols: Names of columns for electrodes [ value, std ].
+        """
+        self._values = np.array(df[data_cols[0]])
+        self._errors = np.array(df[data_cols[1]])
 
 
     def schlumberger_scheme(self, cables=None):
@@ -247,12 +273,17 @@ class Survey:
                 src_list.append(src)
             self._simpeg_survey = DC.Survey(src_list)
 
+        if self._values is not None:
+            self._simpeg_survey.dobs = self._values
+            self._simpeg_survey.std = self._errors
+
         return self._simpeg_survey
 
 
-    def plot_measurements(self, ax):
+    def plot_measurements(self, ax, slice_axis=2, slice_value=0):
         """
         Plot survey scheme to ax Axis.
+
         """
         survey = self.simpeg_survey
         for i, cc in enumerate(survey.srcList):
@@ -277,6 +308,19 @@ class Survey:
             for pp in cc.rxList:
                 n_locs += len(pp.locs)
         print( "#cc : {}\n#pp : {} ({} per cc)\n#loc: {} ({} per pp)".format(n_cc, n_pp, n_pp/n_cc, n_locs, n_locs/n_pp))
+
+
+    def median_apparent_conductivity(self):
+        a_cond = []
+        for U, ccpp in zip(self._values, self.measurements):
+            ccpp = [self.points.all_points[idx, :] for idx in ccpp]
+            capa = 1.0 / np.linalg.norm(ccpp[0] - ccpp[2])
+            pacb = 1.0 / np.linalg.norm(ccpp[2] - ccpp[1])
+            capb = 1.0 / np.linalg.norm(ccpp[0] - ccpp[3])
+            pbcb = 1.0 / np.linalg.norm(ccpp[3] - ccpp[1])
+            app_cond = capa - pacb - capb + pbcb
+            a_cond.append(app_cond)
+        return np.median(a_cond)
 
 # class MeasurementScheme:
 #     """

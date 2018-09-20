@@ -24,7 +24,10 @@ from SimPEG import (
 from SimPEG.EM.Static import DC, Utils as DCUtils
 import numpy as np
 import matplotlib.pyplot as plt
-import survey_factory
+import inversion_tools as inv
+import shapes as shp
+import logging
+import sys
 
 #try:
 #    from pymatsolver import Pardiso as Solver
@@ -34,40 +37,53 @@ from SimPEG import SolverLU as Solver
 # Reproducible science
 np.random.seed(12345)
 
-
+problem_name="2d_2d_inv"
 
 
 
 
 
 class SynteticInv:
+    def __init__(self):
+
+        # Whole mesh.
+        self.mesh = None
+
+        # Core mesh for conductivity
+        self.mesh_core = None
+        # indicate cells of whole mesh that are part of the core mesh
+        self.actind = None
+
+    @inv.time_func
     def setup_geometry(self):
         """
         Define geometry and mesh.
         :return: None
         """
-        # Mesh dimensions X,Y,Z
-        dim = [30, 15]csx, csy, csz = 0.25, 0.25, 0.25
+        # Mesh dimensions X,Z
+        x_size, z_size = dim = [ 30, 15 ]
         # Number of core cells in each direction
-        ncx, ncy, ncz = 60, 20, 20
+        #ncx, ncz = 123, 41
+        ncx, ncz = nc = [30, 30]
+        csx, csz = step = np.array(dim)/np.array(nc)
+
         # Number of padding cells to add in each direction
         npad = 12
         # Vectors of cell lengthts in each direction
         hx = [(csx, npad, -1.5), (csx, ncx), (csx, npad, 1.5)]
-        hy = [(csy, npad, -1.5), (csy, ncy), (csy, npad, 1.5)]
         hz = [(csz, npad, -1.5), (csz, ncz)]
         # Create mesh
-        mesh = Mesh.TensorMesh([hx, hy, hz], x0="CCN")
+        mesh = Mesh.TensorMesh([hx, hz], x0="CN")
         # Vertical shift of the mesh by half of the mesh step
         mesh.x0[1] = mesh.x0[1] + csz / 2.
         self.mesh = mesh
 
-        # Extract submesh (CoreMesh) where the conductivity lives.
-        xmin, xmax = -15., 15
-        zmin, zmax = -15., 0.
+        xmin, xmax = -x_size/2, +x_size/2
+        zmin, zmax = -z_size, 0.
         xyzlim = np.r_[[[xmin, xmax], [zmin, zmax]]]
 
-        self.actind, self.meshCore = Utils.meshutils.ExtractCoreMesh(xyzlim, self.mesh)
+        # Extract submesh (CoreMesh) where the conductivity lives.
+        self.actind, self.mesh_core = Utils.meshutils.ExtractCoreMesh(xyzlim, self.mesh)
 
 
     def set_syntetic_conductivity(self):
@@ -79,12 +95,9 @@ class SynteticInv:
         # 2-cylinders Model Creation
         ############################
 
-        # Spheres parameters
-        # Left, Conductive sphere
-        x0, y0, z0, r0 = c0 = [-6., -5., 3.]
-        # Right, Resistive sphere
-        x1, y1, z1, r1 = c1 = [6., -5., 3.]
-        self.cylinders = [c0, c1]
+        # Cylinders, conductive on left resistive on  right
+        self.cylinders = [shp.Cylinder.from_axis((-6, -100, -5), (-6, 100, -5), 3),
+                          shp.Cylinder.from_axis((6, -100, -5), (6, 100, -5), 3)]
 
         self.ln_sigback = ln_sigback = -5.
         ln_sigc = -3.
@@ -94,29 +107,28 @@ class SynteticInv:
         mtrue = ln_sigback * np.ones(self.mesh.nC)
 
         # Set cells with center in Conductive sphere
-        csph = (np.sqrt((self.mesh.gridCC[:, 1] - z0) **
-                        2. + (self.mesh.gridCC[:, 0] - x0) ** 2.)) < r0
-        mtrue[csph] = ln_sigc * np.ones_like(mtrue[csph])
+        points = self.mesh.gridCC[:, [0, 0, 1]]
+        points[:, 1] = 0
+        csph = self.cylinders[0].inside(points)
+        mtrue[csph] = ln_sigc
 
         # Set cells with center in Resistive sphere
-        rsph = (np.sqrt((self.mesh.gridCC[:, 1] - z1) **
-                        2. + (self.mesh.gridCC[:, 0] - x1) ** 2.)) < r1
-        mtrue[rsph] = ln_sigr * np.ones_like(mtrue[rsph])
+        rsph = self.cylinders[1].inside(points)
+        mtrue[rsph] = ln_sigr
+        self.mtrue = mtrue
 
-        self.mtrue = Utils.mkvc(mtrue)
-
-
-
-
-
+    @inv.time_func
     def setup_measurement(self):
 
         # Manual setup of Dipole-Dipole Survey
         n_points = 20
 
-        self.probe_points = survey_factory.probe_points([-15, 0], [15, 0], n_points)
+        self.probe_points = inv.PointSet.line([-15, 0], [15, 0], n_points)
         #self.survey = survey_factory.compose_1d_survey(self.probe_points, survey_factory.schlumberger_full(n_points))
-        self.survey = survey_factory.compose_1d_survey(self.probe_points, survey_factory.schlumberger_inv_scheme(n_points))
+        self.survey = inv.Survey(self.probe_points)
+        #self.survey.schlumberger_inv_scheme()
+        #self.survey.full_per_cable()
+        self.survey.marching_cc_pair()
         # xmin, xmax = -15., 15.
         # ymin, ymax = 0., 0.
         # zmin, zmax = self.mesh.vectorCCy[-1], self.mesh.vectorCCy[-1]
@@ -124,10 +136,12 @@ class SynteticInv:
         # self.survey = DCUtils.gen_DCIPsurvey(endl, "dipole-dipole", dim=self.mesh.dim,
         #                                a=1, b=1, n=n_points, d2flag='2D')
 
+
+
     def setup(self):
         self.setup_geometry()
-        self.set_syntetic_conductivity()
         self.setup_measurement()
+
 
         # Setup Problem with exponential mapping and Active cells only in the core mesh
         expmap = Maps.ExpMap(self.mesh)
@@ -135,15 +149,27 @@ class SynteticInv:
                                            valInactive=-5.)
         self.mapping = expmap * mapactive
         problem = DC.Problem3D_CC(self.mesh, sigmaMap=self.mapping)
-        problem.pair(self.survey)
+        problem.pair(self.survey.simpeg_survey)
         problem.Solver = Solver
 
         # Compute prediction using the forward model and true conductivity data.
         # survey.dpred(mtrue[actind])
         # Make synthetic data adding a noise to the prediction.
         # In fact prediction is computed again.
-        self.survey.makeSyntheticData(self.mtrue[self.actind], std=0.05, force=True)
 
+        self.set_syntetic_conductivity()
+        #self.survey.simpeg_survey.makeSyntheticData(self.mtrue[self.actind], std=0.05, force=True)
+
+        m = self.mtrue[self.actind]
+        std = 0.05
+        dtrue = self.survey.simpeg_survey.dpred(m, f=None)
+        noise = std*abs(dtrue)*np.random.randn(*dtrue.shape)
+        self.survey.simpeg_survey.dobs = dtrue+noise
+        self.survey.simpeg_survey.std = dtrue*0 + std
+
+
+
+    @inv.time_func
     def solve(self):
         # Tikhonov Inversion
         ####################
@@ -152,7 +178,7 @@ class SynteticInv:
         m0 = np.median(self.ln_sigback) * np.ones(self.mapping.nP)
 
         # Misfit functional
-        dmis = DataMisfit.l2_DataMisfit(self.survey)
+        dmis = DataMisfit.l2_DataMisfit(self.survey.simpeg_survey)
         # Regularization functional
         regT = Regularization.Simple(self.mesh, indActive=self.actind)
 
@@ -187,70 +213,29 @@ class SynteticInv:
         ############
 
 
-    @staticmethod
-    def getCylinderPoints(xc, yc, r):
-        """
-        Function to plot cylinder border
-        :param xc, yc: Cylinder center.
-        :param r: radius
-        """
-        points = [(r*np.cos(phi)+xc, r*np.sin(phi)+yc) for phi in np.arange(0, 2*np.pi, 0.1)]
-        return np.array(points)
 
-        # xLocOrig1 = np.arange(-r, r + r / 10., r / 10.)
-        # xLocOrig2 = np.arange(r, -r - r / 10., -r / 10.)
-        # # Top half of cylinder
-        # zLoc1 = np.sqrt(-xLocOrig1 ** 2. + r ** 2.) + zc
-        # # Bottom half of cylinder
-        # zLoc2 = -np.sqrt(-xLocOrig2 ** 2. + r ** 2.) + zc
-        # # Shift from x = 0 to xc
-        # xLoc1 = xLocOrig1 + xc * np.ones_like(xLocOrig1)
-        # xLoc2 = xLocOrig2 + xc * np.ones_like(xLocOrig2)
-        #
-        # topHalf = np.vstack([xLoc1, zLoc1]).T
-        # topHalf = topHalf[0:-1, :]
-        # bottomHalf = np.vstack([xLoc2, zLoc2]).T
-        # bottomHalf = bottomHalf[0:-1, :]
-        #
-        # cylinderPoints = np.vstack([topHalf, bottomHalf])
-        # cylinderPoints = np.vstack([cylinderPoints, topHalf[0, :]])
-        # return cylinderPoints
 
 
     def plot_conductivity(self, ax):
+        probe_points = self.probe_points.cables[0]
         clim = [(self.mtrue[self.actind]).min(), (self.mtrue[self.actind]).max()]
 
-        dat = self.meshCore.plotImage(((self.mtrue[self.actind])), ax=ax[0], clim=clim)
+        dat = self.mesh_core.plotImage(((self.mtrue[self.actind])), ax=ax[0], clim=clim)
         ax[0].set_title('Ground Truth')
         ax[0].set_aspect('equal')
 
-        self.meshCore.plotImage((self.minv), ax=ax[1], clim=clim)
+        self.mesh_core.plotImage((self.minv), ax=ax[1], clim=clim)
         ax[1].set_aspect('equal')
         ax[1].set_title('Inverted Model')
-        ax[1].plot(self.probe_points[:, 0], self.probe_points[:, 1], 'ro')
+        ax[1].plot(probe_points[:, 0], probe_points[:, 1], 'ro')
 
+        plane = [[0,0,0], [1, 0,0], [0, 0, 1]]
         for cyl in self.cylinders:
-            cyl_points = self.getCylinderPoints(*cyl)
+            cyl_points = cyl.contour(plane, 100)
             for sub_ax in ax[0:2]:
-                sub_ax.plot(cyl_points[:, 0], cyl_points[:, 1], 'k--')
+                sub_ax.plot(cyl_points[:, 0], cyl_points[:, 1], 'o', markersize=1)
         return dat
 
-    def plot_survey(self, ax):
-        """
-        Plot survey scheme to ax Axis.
-        """
-        survey = self.survey
-        for i, cc in enumerate(survey.srcList):
-            X, Y = zip(*cc.loc)
-            ax.plot(X, np.array(Y) + i, 'ro', ms=1)
-            for pp in cc.rxList:
-                col = 'bo'
-                for loc in pp.locs:
-                    for x, y in loc:
-                        ax.plot(x, y + i, col, ms=1)
-                    col = 'go'
-                # ax.plot(X[0], Y[0] + i, 'b^', ms = 1)
-                # ax.plot(X[1], Y[1] + i, 'bv', ms=1)
 
 
     def plot_results(self):
@@ -258,7 +243,8 @@ class SynteticInv:
         ax = Utils.mkvc(ax)
 
         dat = self.plot_conductivity(ax)
-        self.plot_survey(ax[2])
+        self.survey.plot_measurements(ax[2])
+        self.survey.print_summary()
 
 
         fig.subplots_adjust(right=0.8)
@@ -268,10 +254,12 @@ class SynteticInv:
 
         cbar_ax.axis('off')
 
+        fig.savefig(problem_name+".pdf")
         plt.show()
 
 
 def main():
+    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
     inversion = SynteticInv()
     inversion.setup()
     inversion.solve()
