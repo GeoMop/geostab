@@ -1,3 +1,8 @@
+# this is in fact copy of
+#   Honza.real_2d_2d_inv.py file
+#   file version on the date 18_09_20
+#   as original code this one provides inversion od ldp measuring data set
+
 """
 2D DC inversion of Dipole Dipole array
 ======================================
@@ -57,7 +62,7 @@ from SimPEG import SolverLU as Solver
 
 
 
-class SynteticInv:
+class ErtMeasurementInversion2d:
     def __init__(self):
 
         # Whole mesh.
@@ -107,7 +112,7 @@ class SynteticInv:
         :return: None
         """
 
-        file_in = os.path.join(src_dir, '..', 'data', 'ert_mereni', 'komora_1','ldp.2dm')
+        file_in = os.path.join(src_dir, '..', '..','data', 'ert_mereni', 'komora_1','ldp.2dm')
 
         raw_df = pd.read_csv(file_in, skiprows=18, header=None, sep='\t')
         # remove last empty column
@@ -298,7 +303,7 @@ class SynteticInv:
 
 def main():
     logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-    inversion = SynteticInv()
+    inversion = ErtMeasurementInversion2d()
     inversion.setup()
     inversion.solve()
     inversion.save_inv()

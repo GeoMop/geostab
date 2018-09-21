@@ -204,7 +204,7 @@ The cost functional consists of the misfit cost:
 \[
     \Phi_m[m] = \sum_{i\in I} \frac{1}{\epsilon_i^2} |F_i[m] - \overline{F}_i|^2 = |\tn D (\vc F[m] - \overline{\vc F})|_2^2
 \]
-where $\epsilon_i$ is standard deviance of a single obseravation $i$ from set of observations $I$, this forms a weight diagonal matrix $D_{i,i} = 1/\epsilon_i$. 
+where $\epsilon_i$ is standard deviance of a single obseravation $i$ from set of observations $I$, this forms a weight diagonal matrix $D_{i,i} = 1/\epsilon_i$.
 
 As the problem is vastly underdetermined, we have to use a suitable regularization functional that reflects our appriori knowledge about the field $m$:
 \[
@@ -214,21 +214,21 @@ This regularization prescribes the appriori field values $m_0$ and penalizes the
 \begin{itemize}
  \item take less smoothing at places of possible discontinuities
  \item smooth more far from the measurement
- \item count for anisotropy, e.g. in the case of 1D measurement in a tunnel we use cylindric coordinates and 
+ \item count for anisotropy, e.g. in the case of 1D measurement in a tunnel we use cylindric coordinates and
  penalize changes in $\phi$ coordinate.
 \end{itemize}
-In principle $\tn K$ can control the regularization better then a single regularization parameter $\beta$ so we should 
+In principle $\tn K$ can control the regularization better then a single regularization parameter $\beta$ so we should
 find suitable methods how to change $\tn K$ e.g. to find discontinuities automatically.
 
-The field $m$ is assumed in a form of linear combination: 
+The field $m$ is assumed in a form of linear combination:
 \[
     m(\vc x) = \sum_{l=1}^L m_l \psi_l(\vc x)
 \]
-where $\psi_l$ are the base functions of the admissible space  $V_{m}$. 
+where $\psi_l$ are the base functions of the admissible space  $V_{m}$.
 
 The optimality conditions are:
 \[
-   0  = \frac12\prtl_{\vc m} \Phi = \tn J[\vc m]^T \tn D^2 (\vc F[\vc m] - \overline{\vc F}) + \beta \tn A (\vc m - \vc m_0) 
+   0  = \frac12\prtl_{\vc m} \Phi = \tn J[\vc m]^T \tn D^2 (\vc F[\vc m] - \overline{\vc F}) + \beta \tn A (\vc m - \vc m_0)
 \]
 where $\tn J=\prtl_{\vc m} \vc F$ is the sensitivity matrix $I\times L$ and $\tn A$ is a regularization matrix $L\times L$:
 \[
@@ -257,15 +257,15 @@ Finally we obtain following general algorithm:
  \item Determine $\beta_k$ (see \ref{sec:beta_choice})
  \item Setup and solve \eqref{eq::step-system} for $\vc d_k$
  \item Find $\lambda_k$ that satisfy suficient decrerase condition (see \ref{sec:linesearch}), set:
-    $\vc m_{k+1} = \vc m_k + \lambda_k \vc d_k$        
+    $\vc m_{k+1} = \vc m_k + \lambda_k \vc d_k$
  \item If no convergence criteria is satisfied (see \ref{sec:conv_crit}) continue to 2.
 \end{enumerate}
 
 \subsection{Forward model evaluation}
 \label{sec:evaluation}
-Every iteration of Algorithm 1 request evaluation of the sensitivity matrix $\vc J[m_k]$ and one or more evaluations of 
-the forward model $\vc F[m_{k,\lambda}]$. In the case of electrical resistivity (ER) every element of $\vc F[\vc m]$ 
-corresponds to a single measurement $i \in I$, given by the current $I$ and positions of points $C1$, $C2$, $P1$, $P2$. 
+Every iteration of Algorithm 1 request evaluation of the sensitivity matrix $\vc J[m_k]$ and one or more evaluations of
+the forward model $\vc F[m_{k,\lambda}]$. In the case of electrical resistivity (ER) every element of $\vc F[\vc m]$
+corresponds to a single measurement $i \in I$, given by the current $I$ and positions of points $C1$, $C2$, $P1$, $P2$.
 In particular:
 \[
     F_i[m] = u^i(\vc x^i_{P1}) - u^i(\vc x^i_{P2}),\ i\in I,
@@ -285,7 +285,7 @@ Where the vector $\vc U$ is a solution of a system:
 \]
 with
 \[
-    \tn L = \sum_{l=1}^L \vc m \tn L^l 
+    \tn L = \sum_{l=1}^L \vc m \tn L^l
 \]
 and
 \[
@@ -299,9 +299,9 @@ we can use matrices $\tn B$ and $\tn C$ to obtain:
 \[
     \vc F[\vc m] = \tn C^T \tn L[\vc m]^{-1} \tn B.
 \]
-However this assume same discretization (mesh) for every measurement. Computing a single inverse 
+However this assume same discretization (mesh) for every measurement. Computing a single inverse
 may seem attractive, but for large systems (fine mesh necessary if it has to common to all meassurements)
-it is better to use a multigrid to compute $\vc F$ in time $\mathcal O(L\times n)$ where $n$ is average number of unknowns 
+it is better to use a multigrid to compute $\vc F$ in time $\mathcal O(L\times n)$ where $n$ is average number of unknowns
 in the refined grid for a single measurement:
 \[
     F_i[\vc m] = \vc c_i^T \vc u_i, \quad \tn L_i[\vc m]\vc u_i =  \vc b_i.
@@ -323,7 +323,7 @@ leads to solving a perturbed problem:
 \]
 using the matrix free approach, we can just perform a few CG iterations to update $\vc u_i$ or apply single multigird cycle.
 
-All together the complexity of single  $\tn J$ evaluation would be about 
+All together the complexity of single  $\tn J$ evaluation would be about
 $\mathcal O(I \times n + I \times L)$ assuming that $\tn A_i^l$ is a local matrix. The evaluation of $\vc F$ have similar complexity.
 Forming the system \eqref{eq::step-system} is about $\mathcal O(I \times L \times L)$ and solution of the system is of a similar complexity.
 If $I \ll L$ it would be better to solve the system in matrix free fassion since Application of the operator have complexity:
@@ -332,13 +332,13 @@ Total about $10^10$ operations. Should be computable in several minutes.
 
 \subsection{Choosing regularization parameter $\beta$}
 \label{sec:beta_choice}
-Commonly used methods are: GCV (generalized cross validation), $L$-curve, discrepacy principle, 
+Commonly used methods are: GCV (generalized cross validation), $L$-curve, discrepacy principle,
 and AIC/BIC (Akaike/Bayessian information criterion). First three are described and compared in \cite{farquharson_2004}
 the last two are compared in \cite{burnham_2004}.
 
 \subsubsection{Discrepancy principle}
 If the misfit components are independent random variableas and true deviations $\epsilon_i$ are known the expected value for $\Phi_m \approx I$.
-so we try to choose $\beta$ that make this relation hold. We start with 
+so we try to choose $\beta$ that make this relation hold. We start with
 \[
   \beta_0 = \Phi_m[m_0]/ \Phi_r[m_0].
 \]
@@ -371,12 +371,12 @@ Simplest linesearch is to find $\lambda_k$ such that:
 \[
     \Phi[\sigma_{k+1}] \le \Phi[\sigma_k]
 \]
-However more appropriate is Armijo's rule \cite{wiki_backtracking_2017} that accepts $\lambda$ when there is sufficiant 
+However more appropriate is Armijo's rule \cite{wiki_backtracking_2017} that accepts $\lambda$ when there is sufficiant
 decrease in the cost function:
 \[
     \Phi[\vc \sigma_{k} + \lambda \vc d_k] \le \Phi[\sigma_k] + \mu \lambda \grad \Phi^T \vc d_k.
 \]
-where $\mu \in (0.01,0.3)$ is a decrease parameter. 
+where $\mu \in (0.01,0.3)$ is a decrease parameter.
 
 
 \subsection{Convergence criteria}
@@ -390,19 +390,19 @@ where $\mu \in (0.01,0.3)$ is a decrease parameter.
 \subsection{Adaptivity of the $\sigma$ space}
 
 \subsection{GREIT framework}
-Electrical Impedance Tomography (EIT) applies same physics to the human body. As the physics is the same 
+Electrical Impedance Tomography (EIT) applies same physics to the human body. As the physics is the same
 some methods and ideas can be used in both fields. Main difference in geophysical applications is:
 external domain, smaller electrodes, no electrode movement.
 
-GREIT (Gratz consensus Reconstruction algorithm for EIT) is a linear method where a matrix $R$ is found to map measurement 
-$\overline{\vc F}$ vector to the field vector $\vc m$. The reconstruction matrix is found as a fit to a training set, this is possible 
+GREIT (Gratz consensus Reconstruction algorithm for EIT) is a linear method where a matrix $R$ is found to map measurement
+$\overline{\vc F}$ vector to the field vector $\vc m$. The reconstruction matrix is found as a fit to a training set, this is possible
 due to similar geometry. Similar approach could be used to tunnels, precomputing usual geometries.
 
 
 \section{Questions}
 Klara's prezentation:
 \begin{itemize}
- \item Which BC on extenal boundary? No flow. Margine min 2x dist of electrodes 
+ \item Which BC on extenal boundary? No flow. Margine min 2x dist of electrodes
  \item How big domain is neccessary compared to the measurement area (line)?
  \item Is it usual to know devitions of the measurement? How they are determined?
 \end{itemize}

@@ -1,3 +1,8 @@
+# this is in fact copy of
+#   Honza.real_2d_2d_inv.py file
+#   file version on the date 18_09_20
+#   modification of the original code in accordance with pdp measuring data set
+
 """
 2D DC inversion of Dipole Dipole array
 ======================================
@@ -57,7 +62,7 @@ from SimPEG import SolverLU as Solver
 
 
 
-class SynteticInv:
+class ErtMeasurementInversion:
     def __init__(self):
 
         # Whole mesh.
@@ -75,10 +80,10 @@ class SynteticInv:
         :return: None
         """
         # Mesh dimensions X,Z
-        x_size, z_size = dim = [ 50, 20 ]
+        x_size, z_size = dim = [ 100, 60 ]
         # Number of core cells in each direction
         #ncx, ncz = 123, 41
-        ncx, ncz = nc = [100, 40]
+        ncx, ncz = nc = [100, 60]
         csx, csz = step = np.array(dim)/np.array(nc)
 
         # Number of padding cells to add in each direction
@@ -107,7 +112,7 @@ class SynteticInv:
         :return: None
         """
 
-        file_in = os.path.join(src_dir, '..', 'data', 'ert_mereni', 'komora_1','ldp.2dm')
+        file_in = os.path.join(src_dir, '..', '..','data', 'ert_mereni', 'komora_1','pdp.2dm')
 
         raw_df = pd.read_csv(file_in, skiprows=18, header=None, sep='\t')
         # remove last empty column
@@ -223,7 +228,7 @@ class SynteticInv:
                                      alpha_z=10.0, indActive=self.actind)
 
         # Personal preference for this solver with a Jacobi preconditioner
-        opt = Optimization.ProjectedGNCG(maxIter=10, tolX=1,
+        opt = Optimization.ProjectedGNCG(maxIter=8, tolX=1,
                                          maxIterCG=30)
         #opt = Optimization.ProjectedGradient(maxIter=100, tolX=1e-2,
         #                                 maxIterLS=20, maxIterCG=30, tolCG=1e-4)
@@ -298,7 +303,7 @@ class SynteticInv:
 
 def main():
     logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-    inversion = SynteticInv()
+    inversion = ErtMeasurementInversion()
     inversion.setup()
     inversion.solve()
     inversion.save_inv()
