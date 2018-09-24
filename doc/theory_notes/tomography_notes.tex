@@ -408,8 +408,18 @@ Klara's prezentation:
 \end{itemize}
 
 
+\section{SimPEG notes}
+\begin{itemize}
+    \item $\phi_d$ - data misfit part of the cost functional
+    \item $\phi_m$ - regularization part of the cost functional
+    \item \verb'|proj(x-g)-x|' - like: $|\vc x_1 - \vc x_0|$ with $\vc x_1 = {\rm proj}(\vc x_0 - \grad f(\vc x_0))$.
+    Projection of the search direction is used. Default is identity  projection but advanced algorithms use kind of lower
+    and upper bounds for compoments.
+\end{itemize}
+
 \bibliographystyle{unsrt}
 \bibliography{tomography_notes}
+
 
 
 \end{document}
