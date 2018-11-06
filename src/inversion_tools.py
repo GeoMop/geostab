@@ -164,6 +164,12 @@ class Survey:
         Read data for measurements.
         :param df: Pandas data frame.
         :param el_cols: Names of columns for electrodes [ value, std ].
+        'value' is normalized potential difference: dU/I
+        'std' is error of the 'value'.
+
+        Try: try to set currents directly without normalization.
+        Need to store currents and modify creation of the Survey (see variable I) to
+        keep transmitter pairs with different current separated.
         """
         self._values = np.array(df[data_cols[0]])
         self._errors = np.array(df[data_cols[1]])
@@ -269,7 +275,8 @@ class Survey:
             sorted.sort()
             for cc, pp_list in sorted:
                 rx_list = [DC.Rx.Dipole(probe_points[pp[0],:], probe_points[pp[1],:]) for pp in pp_list]
-                src = DC.Src.Dipole(rx_list, probe_points[cc[0],:], probe_points[cc[1],:])
+                I = 1.0
+                src = DC.Src.Dipole(rx_list, probe_points[cc[0],:], probe_points[cc[1],:], current=I)
                 src_list.append(src)
             self._simpeg_survey = DC.Survey(src_list)
 

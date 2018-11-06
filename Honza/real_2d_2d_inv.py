@@ -117,34 +117,39 @@ class SynteticInv:
 
         # remove wrong readings
         raw_df = raw_df.drop(raw_df[raw_df['V'] < 0].index)
-        raw_df['std'] = raw_df['std'] * 0.01 /10    # input error is in percent
+        raw_df['std'] = raw_df['std'] * 0.01     # input error is in percent
         # I [mA], V [mV]
-        measured_df = raw_df.iloc[:, [0,1,2,3,5,6,7,9]]
-        print(measured_df.iloc[:,0])
-        raw_df['idx'] = raw_df['ca']*100 + raw_df['cb']
+        #measured_df = raw_df.iloc[:, [0,1,2,3,5,6,7,9]]
+        #print(measured_df.iloc[:,0])
+        #raw_df['idx'] = raw_df['ca']*100 + raw_df['cb']
 
 
         def od(a, b):
             return 1.0 / (raw_df[b] - raw_df[a])
 
         raw_df['k'] = 1.0 / (od('ca', 'pa') - od('pa', 'cb') - od('ca', 'pb') + od('pb', 'cb'))
-        raw_df['res'] = 2* np.pi * raw_df['k'] * raw_df['V'] / raw_df['I'] /raw_df['AppRes']
+        raw_df['res'] = 2* np.pi * raw_df['k'] * raw_df['V'] / raw_df['I']
+        raw_df['U_norm'] = raw_df['V'] / raw_df['I']
 
         eps = 0.005     # rounding error of input data
         I = raw_df['I']
         V = raw_df['V']
+        # ???
         raw_df['round_rel_err'] = np.abs(2 * (V + I) * eps / ( I**2 - eps**2) * I / V )
         #raw_df['res_min'] = 2 * np.pi * raw_df['k'] * (raw_df['V'] - 0.01) / (raw_df['I'] + 0.01) /raw_df['AppRes']
         #raw_df['res_max'] = 2 * np.pi * raw_df['k'] * (raw_df['V'] + 0.01) / (raw_df['I'] - 0.01) /raw_df['AppRes']
-        #raw_df['app_to_res'] = raw_df['AppRes'] / raw_df['res']
+        raw_df['app_to_res'] = raw_df['AppRes'] / raw_df['res']
+        print("Measured to computed apparent resistivity: min={} max={}", np.min(raw_df['app_to_res']), np.max(raw_df['app_to_res']))
         # math up to +- 0.5 percent
 
         # TODO: ? meaning of std and EP
         # TODO: compute and use error of V / I (normalizing to I=1) from known 0.01 precision of the given values
-
-        print(raw_df.iloc[127, :])
-        raw_df.plot(y=['round_rel_err', 'std'])
-        #plt.show()
+        # (V + a)/(I + b) ~ V/I + a/V - b/I
+        # for a=b=e:
+        # (V + a)/(I + b) ~ V/I + e (1/V - 1/I)
+        #print(raw_df.iloc[127, :])
+        raw_df.plot(y=['app_to_res', 'std'])
+        plt.show()
 
 
 
@@ -155,7 +160,7 @@ class SynteticInv:
         #self.survey = survey_factory.compose_1d_survey(self.probe_points, survey_factory.schlumberger_full(n_points))
         self.survey = inv.Survey(self.probe_points)
         self.survey.read_scheme(raw_df, ['ca', 'cb', 'pa', 'pb'])
-        self.survey.read_data(raw_df, ['res', 'round_rel_err'])
+        self.survey.read_data(raw_df, ['U_norm', 'std'])
 
 
 
