@@ -1,0 +1,6 @@
+
+Úkoly:
+Popsat způsob/postup zpracování vstupních dat pro inverzi pomoci BERT (výstupních dat měření).
+Podívat se do bert skriptu, identfikovat hlavní části, které potřebujeme pro naše účely.
+Podívat se na to, zda elektrody jsou nutně v bodech sítě, či nikoli. Jak toto řídit.
+
