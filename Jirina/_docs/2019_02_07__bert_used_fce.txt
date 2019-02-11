@@ -1,6 +1,63 @@
 
-Úkoly:
+To_do:
 Popsat způsob/postup zpracování vstupních dat pro inverzi pomoci BERT (výstupních dat měření).
 Podívat se do bert skriptu, identfikovat hlavní části, které potřebujeme pro naše účely.
 Podívat se na to, zda elektrody jsou nutně v bodech sítě, či nikoli. Jak toto řídit.
 
+/*****************
+BERT - předpoklady
+/*****************
+Nutná instalace Python, BERT, Msys2 (pouze WIN), (pro zobrazení výsledků ve 3D ParaView).
+
+/*****************
+BERT - základní použití
+/*****************
+(1) Před spuštěním výpočtu je nutné připravit soubor s daty měření v požadovaném formátu.
+Formát datového souboru (mereni.dat):
+    40 # number of electrodes
+    # x y z  #  position of electrodes
+    0.000 0.000 0.250
+    1.000 0.000 0.250
+    2.000 0.000 0.250
+    3.000 0.000 0.250
+    4.000 0.000 0.250
+    5.000 0.000 0.250
+    ...
+    359  # number of data
+    #a  b  m  n  u  i  err  # electrode idexes & measered data
+      0     3     1     2     62.18     1.00      0.03
+      1     4     2     3     94.57     1.69      0.03
+      2     5     3     4     84.30     1.68      0.03
+      3     6     4     5     55.76     1.46      0.03
+      4     7     5     6     178.80    2.22      0.03
+    ...
+V datech měření jsou zde hodnoty měřeného proudu a napětí
+Lze ovšem zadat i jinak například ve tvary apparent resistivity (rhoa)
+nebo poměr napětí a proudu (r).
+
+(2) Vytvoření konfiguračního souboru s názvem např. bert.cfg
+Lze vytvořit jednoduše pomocí vhodného nástroje BERT například:
+> bertNew2D bert.cfg mereni.dat
+Nedělá nic moc jiného než je vytvoření konfiguračního souboru bert.cfg, ve kterém
+je zaznamenáno, že data měření jsou v souboru mereni.dat a že se jedná o výpočet ve 2D.
+Konfigurační soubor je jednoduché vytvořit i ručné.
+Konfugurační soubor obsahuje nastavení pro provedení výpočtu/inverze.
+
+(3) Dále je možné používat jednotlivé "příkazy" BERT
+Spuštění příkazu:
+> bert bert.cfg prikaz
+Příkaz např.:
+mesh - generuje síť
+calc - filtruje vstupní data, provede inverzi
+all - zajistí generovaní sítě, filtrování dat, provedení inverze
+show - zobrazí výsledky inverze
+mkpdf - vytvoří výstupní pdf soubor se zobrazenými výsledky inverze
+showdata - zobrazi apparent resistivity pseudosection (tedy pokud jsou data k dispozici)
+Výčet příkazů zde není úplný.
+
+/*****************
+BERT - síť v GMSH
+/*****************
+Složitější síť je možné připravit ve vlastním nástroji (např. GMSH) a následně je použít.
+Generovanou síť je nutné zkonvertovat - k tomu jsou prostředky v knihovně pygimli.mesh.
+V ukázkovém příkladu jsou uvedená konkrétní čísla pro jednotlivé fyzické entity.
