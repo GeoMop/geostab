@@ -32,7 +32,7 @@ Formát datového souboru (mereni.dat):
       4     7     5     6     178.80    2.22      0.03
     ...
 V datech měření jsou zde hodnoty měřeného proudu a napětí
-Lze ovšem zadat i jinak například ve tvary apparent resistivity (rhoa)
+Lze ovšem zadat i jinak například ve tvaru apparent resistivity (rhoa)
 nebo poměr napětí a proudu (r).
 
 (2) Vytvoření konfiguračního souboru s názvem např. bert.cfg
@@ -60,4 +60,25 @@ BERT - síť v GMSH
 /*****************
 Složitější síť je možné připravit ve vlastním nástroji (např. GMSH) a následně je použít.
 Generovanou síť je nutné zkonvertovat - k tomu jsou prostředky v knihovně pygimli.mesh.
-V ukázkovém příkladu jsou uvedená konkrétní čísla pro jednotlivé fyzické entity.
+V ukázkovém příkladu jsou uvedená konkrétní čísla pro jednotlivé fyzické entity,
+které jsou použité při vytváření geometrie v GMSH.
+1 - outer region
+2 - inversion region
+(3 - geologické struktury - není jasné, zda i pro inverzi)
+1 - Neumann boundary - stěny tunelů, úroveň terénu apod
+2 - mixed boundary
+99 - electrode nodes
+
+
+/*****************
+BERT - pozice elektrod v síti
+/*****************
+BERT při generování sítě v zadaných pozicích elektrod jsou evidentně body sítě.
+Obdobně je to v ukázce přípravy sitě v GMSH, která je následně převedena do formátu BMS.
+Je otázka, zda je to nutný předpoklad pro výpočet, či nikoli.
+V konfiguračním souboru BERT může být jako jeden z parametrů zadaný parametr ELECTRODENODES.
+Implicitní hodnota parametru zřejmě 1. U tohoto parametru je poznámka
+"electrodes are represented by nodes (not implemented yet)"
+Není zcela zřejmé, co není implementované a zda to opravdu platí pro aktuální verzi.
+Síť generovaná implicitně v BERT hodnota tohoto parametru 0, síť se vytvoří s nódy v pozicích elektrod.
+Šíť vytvořená v GMSH, bez nódů v pozicich elektrod.
