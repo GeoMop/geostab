@@ -54,6 +54,7 @@ show - zobrazí výsledky inverze
 mkpdf - vytvoří výstupní pdf soubor se zobrazenými výsledky inverze
 showdata - zobrazi apparent resistivity pseudosection (tedy pokud jsou data k dispozici)
 Výčet příkazů zde není úplný.
+Základni příkaz calc resp. all.
 
 /*****************
 BERT - síť v GMSH
@@ -73,12 +74,23 @@ které jsou použité při vytváření geometrie v GMSH.
 /*****************
 BERT - pozice elektrod v síti
 /*****************
-BERT při generování sítě v zadaných pozicích elektrod jsou evidentně body sítě.
+BERT při generování sítě, v zadaných pozicích elektrod jsou evidentně body sítě.
 Obdobně je to v ukázce přípravy sitě v GMSH, která je následně převedena do formátu BMS.
 Je otázka, zda je to nutný předpoklad pro výpočet, či nikoli.
 V konfiguračním souboru BERT může být jako jeden z parametrů zadaný parametr ELECTRODENODES.
-Implicitní hodnota parametru zřejmě 1. U tohoto parametru je poznámka
-"electrodes are represented by nodes (not implemented yet)"
-Není zcela zřejmé, co není implementované a zda to opravdu platí pro aktuální verzi.
-Síť generovaná implicitně v BERT hodnota tohoto parametru 0, síť se vytvoří s nódy v pozicích elektrod.
-Šíť vytvořená v GMSH, bez nódů v pozicich elektrod.
+Implicitní hodnota parametru dle dokumentace 1 (zřejmě představuje fakt, že v zadaných pozicich elektrod jsou uzly sítě) .
+U tohoto parametru je poznámka "electrodes are represented by nodes (not implemented yet)"
+Není zcela zřejmé, co není implementované.
+Síť generovaná implicitně v BERT s hodnotou tohoto parametru 0, síť se vytvoří s nódy v pozicích elektrod.
+Šíť vytvořená v GMSH, bez nódů v pozicich elektrod, výpočet inverze OK, nicméně není jasné,
+jak v tomto případě BERT interně pracuje.
+
+/*****************
+BERT - hlavní parametry konfiguračního souboru
+/*****************
+obecné nastavení, interpetace vstupních dat, parametry inverze,
+parametry pro vytvoření sítě, parametry zobrazení, nastavení adresářů
+
+DATAFILE=data.dat      # jmeno vstupního souboru s daty měření
+DIMENSION=2            # dimenze, úlohy 2 nebo 3
+OVERRIDEERROR=1        # estimate error new even if one is in file, 0, 1
