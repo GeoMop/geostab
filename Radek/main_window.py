@@ -26,12 +26,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.el_groupView = ElectrodeGroupView(central_widget)
         self.el_groupView.setModel(self._electrode_group_model)
         vlayout.addWidget(self.el_groupView)
-        self.el_groupView.setMinimumWidth(500)
+        self.el_groupView.setMinimumWidth(300)
+        self.el_groupView.setMaximumWidth(300)
 
         self.diagram_view = DiagramView()
         hlayout.addWidget(self.diagram_view)
 
         self.diagram_view.show_electrodes(self._electrode_groups)
+        self.diagram_view.show_map()
+        self.diagram_view.fitInView(self.diagram_view._scene.sceneRect(), QtCore.Qt.KeepAspectRatio)
 
     # def _handle_el_groupList_item_change(self):
     #     currentItem = self.el_groupView.currentItem()
