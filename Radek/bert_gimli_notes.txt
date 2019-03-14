@@ -1,0 +1,5 @@
+- bert gimli stejní autoři - není poznat, kde jedno končí a druhý začíná
+- schema v bert_gimli_schema.pdf
+- bash -> python
+
+- Gunther et al. (2006) - triple-grid inversion technique
