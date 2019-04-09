@@ -19,8 +19,15 @@ def parse(file_name):
         if xls.sheet_names[1] != "měření":
             ret["warnings"].append('Name of second sheet should be "měření".')
 
-        df_e = pd.read_excel(xls, sheet_name=0, usecols="A:H", skiprows=2, header=None, dtype=object)
-        df_m = pd.read_excel(xls, sheet_name=1, usecols="I,J", skiprows=2, header=None, dtype=object)
+        #df_e = pd.read_excel(xls, sheet_name=0, usecols="A:H", skiprows=2, header=None, dtype=object)
+        #df_e = pd.read_excel(xls, sheet_name=0, usecols="A:E,H:J", skiprows=2, header=None, dtype=object)
+        usecols = "A:E,H:J"
+        names = ["id", "gallery", "wall", "height", "offset", "x", "y", "z"]
+        df_e = pd.read_excel(xls, sheet_name=0, names=names, usecols=usecols, skiprows=2, header=None, dtype=object)
+
+        usecols = "A,I,J,M"
+        names = ["electrode", "number", "date", "file"]
+        df_m = pd.read_excel(xls, sheet_name=1, names=names, usecols=usecols, skiprows=2, header=None, dtype=object)
 
     # parse electrodes
     gallery_last = ""
@@ -28,44 +35,64 @@ def parse(file_name):
     height_last = ""
     for i in range(df_e.shape[0]):
         # id
-        v = df_e[0][i]
+        v = df_e["id"][i]
         if type(v) is not int:
             continue
         e_id = v
 
         # gallery
-        v = df_e[1][i]
+        v = df_e["gallery"][i]
         if type(v) is str and v != "":
             gallery_last = v
 
         # wall
-        v = df_e[2][i]
+        v = df_e["wall"][i]
         if type(v) is str and v != "":
             wall_last = v
 
         # height
-        v = df_e[3][i]
+        v = df_e["height"][i]
         if type(v) is str and v != "":
             height_last = v
 
         eg = _add_electrode_group(ret["electrode_groups"], gallery_last, wall_last, height_last)
-        _add_electrode(eg, e_id, df_e[4][i], df_e[5][i], df_e[6][i], df_e[7][i])
+        _add_electrode(eg, e_id, df_e["offset"][i], df_e["x"][i], df_e["y"][i], df_e["z"][i])
 
     # parse measurements
     for i in range(df_m.shape[0]):
         # number
-        v = df_m[0][i]
+        v = df_m["number"][i]
         if type(v) is not str or v == "":
             continue
         number = v
 
         # date
-        v = df_m[1][i]
+        v = df_m["date"][i]
         if type(v) is not pd.Timestamp:
             continue
         date = v.to_pydatetime()
 
-        ret["measurements"].append(Measurement(number=number, date=date))
+        # file
+        v = df_m["file"][i]
+        if type(v) is not str or v == "":
+            continue
+        file = v
+
+        # el start
+        v = df_m["electrode"][i]
+        if type(v) is not int:
+            continue
+        el_start = v
+
+        # el stop
+        v = df_m["electrode"][i+1]
+        if type(v) is not int:
+            continue
+        el_stop = v
+
+        m = Measurement(number=number, date=date, file=file, el_start=el_start, el_stop=el_stop)
+        m.load_data()
+        ret["measurements"].append(m)
 
     return ret
 

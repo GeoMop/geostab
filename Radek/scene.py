@@ -353,8 +353,6 @@ class Diagram(QtWidgets.QGraphicsScene):
 
 
     def mouseMoveEvent(self, event):
-        print(event.scenePos())
-
         if self.last_point is not None:
             self.move_aux_segment(event.scenePos())
         super().mouseMoveEvent(event)
