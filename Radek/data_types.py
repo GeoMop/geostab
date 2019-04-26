@@ -1,3 +1,6 @@
+import ares_parser
+
+import os
 
 
 class ElectrodeGroup:
@@ -18,7 +21,19 @@ class Electrode:
 
 
 class Measurement:
-    def __init__(self, number="", date=""):
+    def __init__(self, number="", date="", file="", el_start=0, el_stop=0):
         self.number = number
         """Measurement number, this is key"""
         self.date = date
+        self.file = file
+        self.el_start = el_start
+        self.el_stop = el_stop
+        self.data = None
+
+    def load_data(self):
+        """Loads data file."""
+        if self.file == "" or not os.path.isfile(self.file):
+            return
+        res = ares_parser.parse(self.file)
+        if not res["errors"]:
+            self.data = res

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import numpy as np
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets, QtSvg
 from PyQt5.QtCore import Qt
 import mouse
 import math
@@ -247,7 +247,7 @@ class TmpSegment(Segment):
 class Diagram(QtWidgets.QGraphicsScene):
 
     def __init__(self, parent):
-        rect = QtCore.QRectF(0,0,1000,1000)
+        rect = QtCore.QRectF(-622500, 1128600, 400, 500)
         super().__init__(rect, parent)
         self.points = []
         self.regions = []
@@ -256,6 +256,10 @@ class Diagram(QtWidgets.QGraphicsScene):
         self.last_point = None
         self.aux_pt, self.aux_seg = self.create_aux_segment()
         self.hide_aux_line()
+
+        pen = QtGui.QPen()
+        pen.setWidthF(0)
+        self.addRect(rect, pen)
 
 
     def create_aux_segment(self):
@@ -449,14 +453,28 @@ class DiagramView(QtWidgets.QGraphicsView):
         for eg in electrode_groups:
             region = Region()
             for el in eg.electrodes:
-                x = 622335.549316 + el.x + 100
-                y = -1128822.206665 - el.y + 100
+                x = el.x
+                y = -el.y
                 print("x: {}, y: {}".format(x, y))
                 pt = Point(x, y, region)
                 gpt = GsPoint(pt)
                 self._scene.addItem(gpt)
 
         self.fitInView(self.scene().itemsBoundingRect(), Qt.KeepAspectRatio)
+
+    def show_map(self):
+        map = QtSvg.QGraphicsSvgItem("bukov_situace.svg")
+
+        # map transform
+        # 622380 - 247.266276267186
+        # 1128900 - 972.212997362655
+        # 1128980 - 1309.97292588439
+        map.setTransformOriginPoint(247.266276267186, 972.212997362655)
+        map.setScale((1128980 - 1128900) / (1309.97292588439 - 972.212997362655))
+        map.setPos(-622380 - 247.266276267186, 1128900 - 972.212997362655)
+
+        self._scene.addItem(map)
+        map.setCursor(QtCore.Qt.CrossCursor)
 
 
 if __name__ == '__main__':
