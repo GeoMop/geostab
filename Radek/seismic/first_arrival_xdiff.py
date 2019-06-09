@@ -20,14 +20,15 @@ sm = so.load_measurement(files, nsta=40, nlta=60)
 first_arrival_xls = so.load_fa_xls("vyčíslení_P3.xls")
 
 # define which first arrivals will be found
-#required_fa = [(j*20.0, i*4.0) for j in range(0, 1) for i in range(0, 21)]
+#required_fa = [(j*20.0, i*4.0) for j in range(0, 5) for i in range(0, 21)]
 required_fa = first_arrival_xls.keys()
+#required_fa = [k for k in required_fa if 80.0 >= k[0] >= 0.0]
 
-# create maps between (source_location, receiver_location) and index in optimize vector
-trace_to_xi, xi_to_trace = so.create_map(required_fa)
+# create map from (source_location, receiver_location) to index in optimize vector
+trace_to_xi = so.xdiff_create_map(sm, required_fa)
 
 # create bounds
-bounds = so.create_bounds(sm, xi_to_trace, 0.00, 1500, 0.015, 1000)
+bounds = so.xdiff_create_bounds(sm, trace_to_xi, 0.008, 1500, 600)
 
 # load or compute optimized vector
 if len(sys.argv) > 1:
@@ -35,15 +36,14 @@ if len(sys.argv) > 1:
         result_x = np.array(json.load(fd))
 else:
     # create initial_population
-    #init = so.create_initial_population2(sm, xi_to_trace, bounds, popsize=100)
     init = "latinhypercube"
     #init = "random"
 
     t = time.time()
     diff_weight = 2e+1
-    sequence_weight = 2e+1
-    args = (sm, trace_to_xi, xi_to_trace, diff_weight, sequence_weight)
-    result = differential_evolution(so.crit_fun, bounds, args, init=init,
+    inv_weight = 1e+5
+    args = (sm, required_fa, trace_to_xi, diff_weight, inv_weight)
+    result = differential_evolution(so.xdiff_crit_fun, bounds, args, init=init,
                                     strategy="best1bin", popsize=100, tol=1e-5, maxiter=1000,
                                     polish=True, disp=True)  # workers=-1
     print("Final f(x)= {:.6g}".format(result.fun))
@@ -53,10 +53,9 @@ else:
         json.dump(result_x.tolist(), fd, indent=4, sort_keys=True)
 
 # plot results
-first_arrival = so.first_arrival_from_x(required_fa, trace_to_xi, result_x)
+first_arrival = so.xdiff_first_arrival_from_x(required_fa, trace_to_xi, result_x)
 #first_arrival = {k:v for k, v in first_arrival.items() if k[0] in [40.0, 60.0]}
-plt_bounds = so.plt_bounds_from_x_bounds(required_fa, trace_to_xi, bounds)
-so.plot_results(sm, first_arrival, first_arrival2=first_arrival_xls, plt_bounds=plt_bounds, all_traces=True)
+so.plot_results(sm, first_arrival, first_arrival2=first_arrival_xls, all_traces=True)
 
 # save first arrivals
 #so.save_first_arrival(first_arrival, "out_fa.txt")
