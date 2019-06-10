@@ -429,7 +429,12 @@ def xdiff_crit_fun(x, seismic_measurement, required_first_arrival, trace_to_xi, 
     for trace_key in trace_to_xi:
         # characteristic function
         ti = seismic_measurement.trace_dict[trace_key]
-        crit += (ti.cft_max - ti.cft[int(fa[trace_key] * seismic_measurement.sampling_rate)]) ** 2
+        ind = int(fa[trace_key] * seismic_measurement.sampling_rate)
+        if ind < len(ti.cft):
+            c = ti.cft[ind]
+        else:
+            c = 0.0
+        crit += (ti.cft_max - c) ** 2
 
         # find previous and next x
         ti = seismic_measurement.trace_dict[trace_key]

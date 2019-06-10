@@ -28,7 +28,7 @@ required_fa = first_arrival_xls.keys()
 trace_to_xi = so.xdiff_create_map(sm, required_fa)
 
 # create bounds
-bounds = so.xdiff_create_bounds(sm, trace_to_xi, 0.008, 1500, 600)
+bounds = so.xdiff_create_bounds(sm, trace_to_xi, 0.01, 1500, 600)
 
 # load or compute optimized vector
 if len(sys.argv) > 1:
