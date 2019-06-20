@@ -209,6 +209,22 @@ def create_initial_population2(seismic_measurement, xi_to_trace, bounds, popsize
     return init
 
 
+def create_x0(seismic_measurement, xi_to_trace, bounds):
+    """
+    Creates starting point in maximum of characteristic function.
+    :param seismic_measurement:
+    :param xi_to_trace:
+    :param bounds:
+    :return:
+    """
+    x0 = []
+    for j in range(len(bounds)):
+        sr = seismic_measurement.sampling_rate
+        cft = seismic_measurement.trace_dict[xi_to_trace[j][0]].cft
+        x0.append(np.argmax(cft[int(bounds[j][0] * sr):int(bounds[j][1] * sr)]) / sr + bounds[j][0])
+    return x0
+
+
 def first_arrival_from_x(required_first_arrival, trace_to_xi, x):
     """
     Converts first arrivals from x to {(source_location, receiver_location) -> first_arrival}.
@@ -241,7 +257,8 @@ def plt_bounds_from_x_bounds(required_first_arrival, trace_to_xi, x_bounds):
     return plt_bounds
 
 
-def plot_results(seismic_measurement, first_arrival, first_arrival2={}, plt_bounds={}, all_traces=True):
+def plot_results(seismic_measurement, first_arrival, first_arrival2={}, plt_bounds={}, all_traces=True,
+                 title="First arrivals"):
     """
     Plot first arrivals.
     :param seismic_measurement:
@@ -249,6 +266,7 @@ def plot_results(seismic_measurement, first_arrival, first_arrival2={}, plt_boun
     :param first_arrival2: {(source_location, receiver_location) -> first_arrival}
     :param plt_bounds: {(source_location, receiver_location) -> (min, max)}
     :param all_traces: if True show all traces
+    :param title:
     :return:
     """
     sl_list = sorted({fa[0] for fa in first_arrival})
@@ -263,12 +281,13 @@ def plot_results(seismic_measurement, first_arrival, first_arrival2={}, plt_boun
         cols = 3
     else:
         cols = 4
+    cols = 2
     rows = plt_num // cols
     if plt_num % cols > 0:
         rows += 1
 
     for i in range(plt_num):
-        ls = sl_list[i]
+        sl = sl_list[i]
 
         # plot traces by ObsPy
         if all_traces:
@@ -277,37 +296,62 @@ def plot_results(seismic_measurement, first_arrival, first_arrival2={}, plt_boun
             fa_keys = first_arrival.keys()
         st = obspy.Stream()
         for fa in fa_keys:
-            if fa[0] == ls:
+            if fa[0] == sl:
                 st.append(obspy.Trace(seismic_measurement.trace_dict[fa].data,
                                       header={"distance": fa[1], "sampling_rate": seismic_measurement.sampling_rate}))
-        ax = plt.subplot(rows, cols, i+1)
+        ax = plt.subplot(rows, cols, i + 1)
         st.plot(type='section', orientation='horizontal', show=False, fig=ax.figure, scale=4, norm_method="trace")
 
         sm = seismic_measurement
         sr = sm.sampling_rate
-        for fa, x in first_arrival.items():
-            if fa[0] == ls:
-                # characteristic function
-                # cft = sm.trace_dict[fa].cft
-                # ax.plot(np.array(range(len(cft))) / sr, cft / 500 + fa[1] / 1000)
+        first_arrival_sl = {fa: x for fa, x in first_arrival.items() if fa[0] == sl}
 
-                # bounds
-                if fa in plt_bounds:
-                    ax.plot([plt_bounds[fa]], [fa[1] / 1000], 'yx')
+        # characteristic function
+        # for fa in first_arrival_sl:
+        #     cft = sm.trace_dict[fa].cft
+        #     ax.plot(np.array(range(len(cft))) / sr, cft / 500 + fa[1] / 1000)
 
-                # first arrivals 2
-                if fa in first_arrival2:
-                    ax.plot([first_arrival2[fa]], [fa[1] / 1000], 'gx')
+        # bounds
+        xl = [plt_bounds[fa][0] for fa in first_arrival_sl if fa in plt_bounds]
+        xr = [plt_bounds[fa][1] for fa in first_arrival_sl if fa in plt_bounds]
+        y = [fa[1] / 1000 for fa in first_arrival_sl if fa in plt_bounds]
+        ax.plot(xl, y, 'y<', fillstyle="none", label="Min bounds")
+        ax.plot(xr, y, 'y>', fillstyle="none", label="Max bounds")
 
-                # max of characteristic function
-                if fa in plt_bounds:
-                    ax.plot([(np.argmax(sm.trace_dict[fa].cft[int(plt_bounds[fa][0] * sr):int(plt_bounds[fa][1] * sr)])
-                              / sr + plt_bounds[fa][0])], [fa[1] / 1000], 'b+')
-                else:
-                    ax.plot([sm.trace_dict[fa].cft_max_i / sr ], [fa[1] / 1000], 'b+')
+        # first arrivals 2
+        x = [first_arrival2[fa] for fa in first_arrival_sl if fa in first_arrival2]
+        y = [fa[1] / 1000 for fa in first_arrival_sl if fa in first_arrival2]
+        ax.plot(x, y, 'gx', label="First arrivals ref.")
 
-                # first arrivals
-                ax.plot([x], [fa[1] / 1000], 'rx')
+        # max of characteristic function
+        x = []
+        for fa in first_arrival_sl:
+            if fa in plt_bounds:
+                x.append(np.argmax(sm.trace_dict[fa].cft[int(plt_bounds[fa][0] * sr):int(plt_bounds[fa][1] * sr)])
+                         / sr + plt_bounds[fa][0])
+            else:
+                x.append(sm.trace_dict[fa].cft_max_i / sr)
+        y = [fa[1] / 1000 for fa in first_arrival_sl]
+        ax.plot(x, y, 'b+', label="Max of char. func.")
+
+        # first arrivals
+        x = [x for x in first_arrival_sl.values()]
+        y = [fa[1] / 1000 for fa in first_arrival_sl]
+        ax.plot(x, y, 'rx', label="First arrivals")
+
+        # remove unwanted labels
+        if i % 2 != 0:
+            plt.setp(ax.get_yticklabels(), visible=False)
+            ax.set_ylabel(None)
+        if i < 8:
+            plt.setp(ax.get_xticklabels(), visible=False)
+            ax.set_xlabel(None)
+
+    #plt.suptitle(title)
+
+    plt.legend(bbox_to_anchor=(1.05, 0.9), loc="upper left")
+    plt.tight_layout(pad=0, w_pad=0.0, h_pad=-0.9)
+    plt.subplots_adjust(left=0.1, right=0.99, top=0.99, bottom=0.05, wspace=0.01)
 
     plt.show()
 
@@ -419,7 +463,6 @@ def xdiff_crit_fun(x, seismic_measurement, required_first_arrival, trace_to_xi, 
     :param seismic_measurement:
     :param required_first_arrival
     :param trace_to_xi:
-    :param xi_to_trace:
     :param diff_weight: weight of penalization difference of difference first arrivals
     :param inv_weight: weight of penalization if inverse measurement is not same
     :return: criterium
@@ -488,9 +531,6 @@ def xdiff_create_bounds(seismic_measurement, trace_to_xi, max_diff, long_max_vel
                 continue
             dist = math.fabs(trace_key[1] - trace_key[0])
             bounds[xi[0]] = (dist / long_max_vel, dist / long_min_vel)
-            # if trace_key == (-40.0, 0.0):
-            #     bounds[xi[0]] = (bounds[xi[0]][0], 0.045)
-            # print("{}: {}".format(trace_key, bounds[xi[0]]))
 
     return bounds
 
@@ -509,6 +549,146 @@ def xdiff_first_arrival_from_x(required_first_arrival, trace_to_xi, x):
             first_arrival[rfa] = math.fsum([x[i] for i in trace_to_xi[rfa]])
         else:
             first_arrival[rfa] = 0.0
+    return first_arrival
+
+
+# first arrivals from measurement - xdiff2 version
+##################################################
+
+def xdiff2_create_map(seismic_measurement, required_first_arrival):
+    """
+    Creates map from (source_location, receiver_location) to list of index in optimize vector and base (sl, rl).
+    :param seismic_measurement:
+    :param required_first_arrival: List of (source_location, receiver_location)
+    :return: {(source_location, receiver_location) -> [(xi, (sl_base, rl_base)), ...]}
+    """
+    trace_to_xi = {}
+    next_ind = 0
+
+    def base_trace(trace):
+        ti = seismic_measurement.trace_dict[trace]
+        if trace[0] < trace[1]:
+            base = ti.prev
+        else:
+            base = ti.next
+        if (base is not None) and (base[1] == base[0]):
+            return None
+        return base
+
+    for rfa in sorted(required_first_arrival):
+        if rfa[1] != rfa[0]:
+            rfa_inv = (rfa[1], rfa[0])
+            if rfa_inv in trace_to_xi:
+                trace_to_xi[rfa] = trace_to_xi[rfa_inv]
+                continue
+            xi = [(next_ind, base_trace(rfa))]
+            next_ind += 1
+            if rfa_inv in required_first_arrival:
+                xi.append((next_ind, base_trace(rfa_inv)))
+                next_ind += 1
+            trace_to_xi[rfa] = xi
+
+    return trace_to_xi
+
+
+def xdiff2_crit_fun(x, seismic_measurement, required_first_arrival, trace_to_xi, diff_weight=20):
+    """
+    Criterial function.
+    :param x: Parameter vector
+    :param seismic_measurement:
+    :param required_first_arrival
+    :param trace_to_xi:
+    :param diff_weight: weight of penalization difference of difference first arrivals
+    :return: criterium
+    """
+    crit = 0.0
+    fa = xdiff2_first_arrival_from_x(required_first_arrival, trace_to_xi, x)
+    for trace_key in trace_to_xi:
+        # characteristic function
+        ti = seismic_measurement.trace_dict[trace_key]
+        ind = int(fa[trace_key] * seismic_measurement.sampling_rate)
+        if ind < len(ti.cft):
+            c = ti.cft[ind]
+        else:
+            c = 0.0
+        crit += (ti.cft_max - c) ** 2
+
+        # find previous and next x
+        ti = seismic_measurement.trace_dict[trace_key]
+        prev_x = None
+        if ti.prev is not None:
+            if ti.prev in fa:
+                prev_x = fa[ti.prev]
+        next_x = None
+        if ti.next is not None:
+            if ti.next in fa:
+                next_x = fa[ti.next]
+
+        # difference penalization
+        if (prev_x is not None) and (next_x is not None):
+            crit += (fa[trace_key] * 2 - prev_x - next_x) ** 2 * diff_weight
+
+    return crit
+
+
+def xdiff2_create_bounds(seismic_measurement, trace_to_xi, max_diff, long_max_vel, long_min_vel):
+    """
+    Create bounds intervals for x.
+    :param seismic_measurement:
+    :param trace_to_xi:
+    :param max_diff: time maximal difference from previous arrival
+    :param long_max_vel: for distant source location and first receiver
+    :param long_min_vel: for distant source location and first receiver
+    :return: bounds
+    """
+    bounds = [(0.0, max_diff)] * len(trace_to_xi)
+
+    # long sources
+    for trace_key, xi in trace_to_xi.items():
+        ti = seismic_measurement.trace_dict[trace_key]
+        for xi_item in xi:
+            if xi_item[1] is None:
+                if (ti.prev is not None) and (ti.prev[0] == ti.prev[1]):
+                    continue
+                if (ti.next is not None) and (ti.next[0] == ti.next[1]):
+                    continue
+                dist = math.fabs(trace_key[1] - trace_key[0])
+                bounds[xi_item[0]] = (dist / long_max_vel, dist / long_min_vel)
+
+    return bounds
+
+
+def xdiff2_first_arrival_from_x(required_first_arrival, trace_to_xi, x):
+    """
+    Converts first arrivals from x to {(source_location, receiver_location) -> first_arrival}.
+    :param required_first_arrival:
+    :param trace_to_xi:
+    :param x:
+    :return: {(source_location, receiver_location) -> first_arrival}
+    """
+    first_arrival = {}
+
+    def fa(trace):
+        if trace is None:
+            return 0.0
+
+        if trace in first_arrival:
+            return first_arrival[trace]
+
+        if trace not in trace_to_xi:
+            return 0.0
+
+        v_max = 0.0
+        for xi_item in trace_to_xi[trace]:
+            v = fa(xi_item[1]) + x[xi_item[0]]
+            if v > v_max:
+                v_max = v
+        first_arrival[trace] = v_max
+        return v_max
+
+    for rfa in required_first_arrival:
+        fa(rfa)
+
     return first_arrival
 
 
@@ -550,6 +730,7 @@ def forward_fa(layers, receiver_locations):
         return math.pow(math.fsum(dist(alpha0, num_lays)) - h, 2)
 
     traces = [[] for _ in receiver_locations]
+    fastest_trace_indexes = [-1] * len(traces)
     first_arrivals = surface_times.copy()
 
     # first layer
@@ -559,7 +740,7 @@ def forward_fa(layers, receiver_locations):
             h = receiver_locations[i] / 2
             alpha = math.atan(h / layers[0][0])
             if alpha > critical_angles[0]:
-                tr = ([0.0, h, receiver_locations[i]], [0.0, -layers[0][0], 0.0])
+                tr = [[0.0, h, receiver_locations[i]], [0.0, -layers[0][0], 0.0], False]
                 traces[i].append(tr)
         alpha0_max = critical_angles[0]
 
@@ -591,9 +772,10 @@ def forward_fa(layers, receiver_locations):
             t = trace_time(d)
             if t < first_arrivals[i]:
                 first_arrivals[i] = t
+                fastest_trace_indexes[i] = len(traces[i])
 
             # trace
-            tr = ([0.0], [0.0])
+            tr = [[0.0], [0.0], False]
             d_cum = 0.0
             y_cum = 0.0
             for k in range(num_lays):
@@ -608,14 +790,20 @@ def forward_fa(layers, receiver_locations):
             traces[i].append(tr)
         alpha0_max = alpha0_min
 
+    # mark fastest trace
+    for receiver, ind in zip(traces, fastest_trace_indexes):
+        if ind > 0:
+            receiver[ind][2] = True
+
     return first_arrivals, traces
 
 
-def plot_traces(layers, receiver_location, traces):
+def plot_traces(layers, receiver_location, first_arrivals, traces):
     """
     Plots traces.
     :param layers:
     :param receiver_location:
+    :param first_arrivals:
     :param traces:
     :return:
     """
@@ -636,13 +824,72 @@ def plot_traces(layers, receiver_location, traces):
                     color = lines[0].get_color()
                 else:
                     color = None
-                lines = plt.plot(tr[0], tr[1], color=color)
+
+                if tr[2]:
+                    lw = 1.5
+                    ls = "-"
+                else:
+                    lw = 0.5
+                    ls = "--"
+
+                lines = plt.plot(tr[0], tr[1], color=color, lw=lw, ls=ls)
 
     # source location
     plt.plot([0.0], [0.0], "gx")
 
     # receiver locations
     plt.plot(receiver_location, [0.0] * len(receiver_location), "rx")
+
+    # speed
+    y = 0.0
+    for lay in layers:
+        plt.text(max_d + 1.0, y - lay[0] / 2, "v = {:.0f} m/s".format(lay[1]), va="center")
+        y -= lay[0]
+
+    # first arrivals
+    for rl, fa in zip(receiver_location, first_arrivals):
+        plt.text(rl, 1.0, "t = {:.3f} s".format(fa), rotation=45, rotation_mode="anchor")
+
+    # labels
+    plt.title("Traces")
+    plt.xlabel("Geophone distance [m]")
+    plt.ylabel("Depth [m]")
+
+    # space for labels
+    bottom, top = plt.ylim()
+    new_top = top + (top - bottom) * 0.1
+    plt.ylim(top=new_top)
+
+    left, right = plt.xlim()
+    new_fight = right + (right - left) * 0.1
+    plt.xlim(right=new_fight)
+
+    plt.grid(True)
+    plt.show()
+
+
+def plot_depth_speed(layers_list, title="Velocity profile"):
+    """
+    Plots depth speed.
+    :param layers_list: list of layers
+    :param title
+    :return:
+    """
+    for layers in layers_list:
+        xx = []
+        yy = []
+        x = 0.0
+        for lay in layers:
+            xx.append(x + lay[0] / 2)
+            yy.append(lay[1])
+            x += lay[0]
+        plt.plot(xx, yy, "o-", label="{} layers".format(len(layers)))
+
+    # labels
+    #plt.title(title)
+    plt.xlabel("Depth [m]")
+    plt.ylabel("Velocity [m/s]")
+    plt.legend()
 
     plt.grid(True)
     plt.show()

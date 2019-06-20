@@ -25,10 +25,10 @@ required_fa = first_arrival_xls.keys()
 #required_fa = [k for k in required_fa if 80.0 >= k[0] >= 0.0]
 
 # create map from (source_location, receiver_location) to index in optimize vector
-trace_to_xi = so.xdiff_create_map(sm, required_fa)
+trace_to_xi = so.xdiff2_create_map(sm, required_fa)
 
 # create bounds
-bounds = so.xdiff_create_bounds(sm, trace_to_xi, 0.01, 1500, 600)
+bounds = so.xdiff2_create_bounds(sm, trace_to_xi, 0.01, 1500, 600)
 
 # load or compute optimized vector
 if len(sys.argv) > 1:
@@ -41,18 +41,16 @@ else:
 
     t = time.time()
     diff_weight = 1e+3
-    inv_weight = 1e+5
-    args = (sm, required_fa, trace_to_xi, diff_weight, inv_weight)
+    args = (sm, required_fa, trace_to_xi, diff_weight)
 
     # differential evolution
-    # result = differential_evolution(so.xdiff_crit_fun, bounds, args, init=init,
-    #                                 strategy="best1bin", popsize=100, tol=1e-5, maxiter=1000,
+    # result = differential_evolution(so.xdiff2_crit_fun, bounds, args, init=init,
+    #                                 strategy="best1bin", popsize=100, tol=1e-5, maxiter=100,
     #                                 polish=True, disp=True)  # workers=-1
-
 
     # dual annealing
     callback = lambda x, f, context: print("f(x)= {:.6g}".format(f))
-    result = dual_annealing(so.xdiff_crit_fun, bounds, args, maxiter=100, callback=callback)
+    result = dual_annealing(so.xdiff2_crit_fun, bounds, args, maxiter=100, callback=callback)
 
     print("message: {}".format(result.message))
     print("nfev: {}".format(result.nfev))
@@ -63,7 +61,7 @@ else:
         json.dump(result_x.tolist(), fd, indent=4, sort_keys=True)
 
 # plot results
-first_arrival = so.xdiff_first_arrival_from_x(required_fa, trace_to_xi, result_x)
+first_arrival = so.xdiff2_first_arrival_from_x(required_fa, trace_to_xi, result_x)
 #first_arrival = {k:v for k, v in first_arrival.items() if k[0] in [40.0, 60.0]}
 so.plot_results(sm, first_arrival, first_arrival2=first_arrival_xls, all_traces=True)
 

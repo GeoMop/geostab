@@ -14,4 +14,4 @@ fa, tr = so.forward_fa(layers, receiver_locations)
 print("Computation time: {:.3f} ms".format((time.time() - t) * 1000))
 print("First arrivals: {}".format(fa))
 
-so.plot_traces(layers, receiver_locations, tr)
+so.plot_traces(layers, receiver_locations, fa, tr)

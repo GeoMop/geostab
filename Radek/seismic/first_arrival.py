@@ -1,7 +1,7 @@
 import seismic_operations as so
 
 import numpy as np
-from scipy.optimize import differential_evolution
+from scipy.optimize import differential_evolution, dual_annealing
 
 import sys
 import time
@@ -39,13 +39,26 @@ else:
     init = "latinhypercube"
     #init = "random"
 
+    # create x0
+    x0 = so.create_x0(sm, xi_to_trace, bounds)
+    #x0 = None
+
     t = time.time()
-    diff_weight = 2e+1
-    sequence_weight = 2e+1
+    diff_weight = 1e+3
+    sequence_weight = 1e+5
     args = (sm, trace_to_xi, xi_to_trace, diff_weight, sequence_weight)
-    result = differential_evolution(so.crit_fun, bounds, args, init=init,
-                                    strategy="best1bin", popsize=100, tol=1e-5, maxiter=1000,
-                                    polish=True, disp=True)  # workers=-1
+
+    # differential evolution
+    # result = differential_evolution(so.crit_fun, bounds, args, init=init,
+    #                                 strategy="best1bin", popsize=100, tol=1e-5, maxiter=1000,
+    #                                 polish=True, disp=True)  # workers=-1
+
+    # dual annealing
+    callback = lambda x, f, context: print("f(x)= {:.6g}".format(f))
+    result = dual_annealing(so.crit_fun, bounds, args, maxiter=100, callback=callback, x0=x0)
+
+    print("message: {}".format(result.message))
+    print("nfev: {}".format(result.nfev))
     print("Final f(x)= {:.6g}".format(result.fun))
     print("Optimization time: {:.3f} s".format(time.time() - t))
     result_x = result.x

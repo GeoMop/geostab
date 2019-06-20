@@ -1,9 +1,10 @@
 import seismic_operations as so
 
-from scipy.optimize import differential_evolution
+from scipy.optimize import differential_evolution, dual_annealing
 
 import time
 import math
+import json
 
 
 # load first arrivals
@@ -35,16 +36,20 @@ def x_to_layers(x, lay_width, num_lays):
     return [(lay_width, x[i]) for i in range(num_lays)]
 
 
-def crit_fun(x, lay_width, num_lays, first_arrival, distances, trace_to_di, speed_decrease_weight):
+def crit_fun(x, lay_width, num_lays, first_arrival, distances, trace_to_di, speed_decrease_weight, speed_diff_weight):
     layers = x_to_layers(x, lay_width, num_lays)
 
-    # speed decrease penalization
     crit = 0.0
     for i in range(1, len(layers)):
         vi = layers[i][1]
         vp = layers[i - 1][1]
+
+        # speed decrease penalization
         if vi < vp:
             crit += (vp - vi) * speed_decrease_weight
+
+        # speed difference penalization
+        crit += (vi - vp) ** 2 * speed_diff_weight
 
     fa, tr = so.forward_fa(layers, distances)
 
@@ -57,34 +62,63 @@ def crit_fun(x, lay_width, num_lays, first_arrival, distances, trace_to_di, spee
     return crit
 
 
-# width of one layer
-lay_width = 10.0
+# total depth
+total_depth = 50.0
 
 # number of layers
-num_lays = 5
+# num_lays = 10
 
-# speed limits
-bounds = [(100.0, 5000.0)] * num_lays
+layers_list = []
+for num_lays in [5, 7, 10, 14, 20]:
+    # width of one layer
+    lay_width = total_depth / num_lays
 
-t = time.time()
-speed_decrease_weight = 1e+5
-args = (lay_width, num_lays, first_arrival, distances, trace_to_di, speed_decrease_weight)
-result = differential_evolution(crit_fun, bounds, args, init="latinhypercube",
-                                strategy="best1bin", popsize=100, tol=1e-5, maxiter=100,
-                                polish=True, disp=True)  # workers=-1
-print("Final f(x)= {:.6g}".format(result.fun))
-print("Optimization time: {:.3f} s".format(time.time() - t))
-result_x = result.x
-print(result_x)
+    # speed limits
+    speed_min = 500.0
+    speed_max = 6000.0
+    bounds = [(speed_min, speed_max)] * num_lays
 
-# plot results
-layers = x_to_layers(result_x, lay_width, num_lays)
-fa, tr = so.forward_fa(layers, distances)
+    # create x0
+    step = (speed_max - speed_min) / (num_lays + 1)
+    x0 = [speed_min + i * step for i in range(1, num_lays + 1)]
+    #x0 = None
 
-print("(source, receiver) -> measured, from inversion")
-for trace_key in sorted(first_arrival):
-    if trace_key in trace_to_di:
-        print("({:5}, {:5}) -> {:8.4f}, {:8.4f}".format(trace_key[0], trace_key[1],
-                                                        first_arrival[trace_key], fa[trace_to_di[trace_key]]))
+    t = time.time()
+    speed_decrease_weight = 1e+5
+    speed_diff_weight = 1e-10
+    args = (lay_width, num_lays, first_arrival, distances, trace_to_di, speed_decrease_weight, speed_diff_weight)
 
-so.plot_traces(layers, distances, tr)
+    # differential evolution
+    result = differential_evolution(crit_fun, bounds, args, init="latinhypercube",
+                                    strategy="best1bin", popsize=100, tol=1e-5, maxiter=100,
+                                    polish=True, disp=True)  # workers=-1
+
+    # dual annealing
+    callback = lambda x, f, context: print("f(x)= {:.6g}".format(f))
+    #result = dual_annealing(crit_fun, bounds, args, maxiter=100, callback=callback, x0=x0)
+
+    print("message: {}".format(result.message))
+    print("nfev: {}".format(result.nfev))
+    print("Final f(x)= {:.6g}".format(result.fun))
+    print("Optimization time: {:.3f} s".format(time.time() - t))
+    result_x = result.x
+    print(result_x)
+
+    # plot results
+    layers = x_to_layers(result_x, lay_width, num_lays)
+    fa, tr = so.forward_fa(layers, distances)
+
+    layers_list.append(layers)
+
+    # print("(source, receiver) -> measured, from inversion")
+    # for trace_key in sorted(first_arrival):
+    #     if trace_key in trace_to_di:
+    #         print("({:5}, {:5}) -> {:8.4f}, {:8.4f}".format(trace_key[0], trace_key[1],
+    #                                                         first_arrival[trace_key], fa[trace_to_di[trace_key]]))
+
+    #so.plot_traces(layers, distances, fa, tr)
+
+with open("layers_list.txt", 'w') as fd:
+    json.dump(layers_list, fd, indent=4, sort_keys=True)
+
+so.plot_depth_speed(layers_list)
