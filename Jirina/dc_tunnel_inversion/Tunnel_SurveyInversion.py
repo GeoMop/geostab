@@ -1,7 +1,7 @@
 from scipy.linalg._flapack import slamch
 
-from Jirina.DC_MitchellPaper_TunnelInversion import Tunnel_ParamMeshTools
-from Jirina.DC_MitchellPaper_TunnelInversion import Tunnel_SurveyTools
+from Jirina.dc_tunnel_inversion import Tunnel_ParamMeshTools
+from Jirina.dc_tunnel_inversion import Tunnel_SurveyTools
 import matplotlib.pyplot as plt
 import numpy
 from pymatsolver import Pardiso as Solver
