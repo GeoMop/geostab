@@ -898,12 +898,13 @@ def plot_depth_speed(layers_list, title="Velocity profile"):
 # forward first arrival, layers are defined as polylines
 ########################################################
 
-def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, return_traces=True, check_inputs=True, max_depth = 100):
+def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, return_traces=True, check_inputs=True, max_depth = 100, min_alpha0_span = 1e-5, xtol=1e-10, test_traces=False):
     """
     Compute first arrivals from layers definition. Layers are defined as polylines.
     :param grid: list of points, where layers geometry is defined, must be rising sequence
     :param layers_geo: list of layers geometry
     :param layers_speed: list of speeds in particular layers
+    ([surface speed, layer 0 speed, ..., layer n - 1 speed, speed below last layer])
     :param required_first_arrival: list of (source_location, receiver_location)
     :param return_traces: if True returns traces for graphical representation
     :param check_inputs: if True checks inputs for errors
@@ -927,37 +928,117 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
             if rfa[0] < grid[0] or rfa[1] < grid[0] or rfa[0] > grid[-1] or rfa[1] > grid[-1]:
                 raise ValueError("source/receiver {} is outside of grid".format(rfa))
 
-    first_arrival = {rfa: math.inf for rfa in required_first_arrival}
+    #first_arrival = {rfa: math.inf for rfa in required_first_arrival}
 
     # reshape required_first_arrival
     required_first_arrival_dict = {}
+    processed = set()
+    inverse_required_first_arrival = []
     for rfa in required_first_arrival:
-        if rfa[0] in required_first_arrival_dict:
-            required_first_arrival_dict[rfa[0]].append(rfa[1])
+        if (rfa[1], rfa[0]) in processed:
+            inverse_required_first_arrival.append(rfa)
         else:
-            required_first_arrival_dict[rfa[0]] = [rfa[1]]
+            if rfa[0] in required_first_arrival_dict:
+                required_first_arrival_dict[rfa[0]].append(rfa[1])
+            else:
+                required_first_arrival_dict[rfa[0]] = [rfa[1]]
 
+            processed.add(rfa)
 
+    compute_traces = return_traces or test_traces
+
+    # if flat_surface:
+    #     min_surface = layers_geo[0][0]
+    # else:
+    #     min_surface = min(layers_geo[0])
+
+    max_inside_speed = max(layers_speed[1:-1])
+
+    hit_seg = []
+    seg_num = len(grid) - 1
+    for i in range(len(layers_geo)):
+        hit_seg.append([0] * seg_num)
+    hit_seg_map = {}
+
+    class V2(tuple):
+        """Simple 2d vector based on tuple. Much faster than use NumPy."""
+        def __add__(self, other):
+            return V2((self[0] + other[0], self[1] + other[1]))
+
+        def __sub__(self, other):
+            return V2((self[0] - other[0], self[1] - other[1]))
+
+        def __mul__(self, other):
+            return V2((self[0] * other, self[1] * other))
+
+        def __truediv__(self, other):
+            return V2((self[0] / other, self[1] / other))
+
+        def __neg__(self):
+            return V2((-self[0], -self[1]))
+
+    # class np:
+    #     @staticmethod
+    #     def fromiter(a, b, c):
+    #         return V2((a[0], a[1]))
+    #         #return V2(a)
+
+    def fun_cache(fun):
+        cache = {}
+
+        def wrapper(alpha0):
+            if alpha0 in cache:
+                return cache[alpha0]
+            ret = fun(alpha0)
+            cache[alpha0] = ret
+            return ret
+
+        return wrapper
+
+    @fun_cache
     def find_source_pos(x):
         seg = 0
-        while x > grid[seg + 1]:
+        while x >= grid[seg + 1]:
             seg += 1
-        y = layers_geo[0][seg] + (layers_geo[0][seg + 1] - layers_geo[0][seg]) * ((x - grid[seg]) / (grid[seg + 1] - grid[seg]))
-        return np.array([x, y]), seg
-
-    source = find_source_pos(required_first_arrival[1][0])
-    receiver = find_source_pos(required_first_arrival[1][1])
+            if seg >= len(grid) - 1:
+                break
+        if x == grid[seg]:
+            if seg == 0:
+                seg_list = [seg]
+            elif seg >= len(grid) - 1:
+                seg_list = [seg - 1]
+            else:
+                seg_list = [seg - 1, seg]
+            y = layers_geo[0][seg]
+        else:
+            seg_list = [seg]
+            y = layers_geo[0][seg] + (layers_geo[0][seg + 1] - layers_geo[0][seg]) * ((x - grid[seg]) / (grid[seg + 1] - grid[seg]))
+        return V2((x, y)), seg_list
 
     traces = []
+    traces_map = {}
 
-    def normalize(x):
-        return x / np.linalg.norm(x)
+    def norm(v):
+        return math.hypot(v[0], v[1])
+
+    def dot(a, b):
+        return a[0] * b[0] + a[1] * b[1]
+
+    def normalize(v):
+        return v / norm(v)
 
     def vec_ori(a, b):
         return a[0] * b[1] - b[0] * a[1]
 
     def line_intersect(a, b, c, d):
-        """Returns point of lines intersection. Lines are defined by its points."""
+        """
+        Returns point of lines intersection. Lines are defined by its points.
+        If a[0] == b[0] than is used faster version.
+        """
+        if a[0] == b[0]:
+            py = c[1] + (d[1] - c[1]) * (a[0] - c[0]) / (d[0] - c[0])
+            return V2((a[0], py))
+
         a0b0 = a[0] - b[0]
         c1d1 = c[1] - d[1]
         a1b1 = a[1] - b[1]
@@ -967,10 +1048,24 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
         den = a0b0 * c1d1 - a1b1 * c0d0
         px = (ab * c0d0 - a0b0 * cd) / den
         py = (ab * c1d1 - a1b1 * cd) / den
-        return np.array([px, py])
+        return V2((px, py))
+
+    def line_point_dist(a, b, p):
+        """Returns distance from point (p) to line segment (a, b)."""
+        # outside a, b
+        ab = b - a
+        ap = p - a
+        if dot(ab, ap) <= 0.0:
+            return norm(ap)
+        bp = p - b
+        if dot(ab, bp) >= 0.0:
+            return norm(bp)
+
+        # inside a, b
+        return math.fabs(ab[1] * p[0] - ab[0] * p[1] + b[0] * a[1] - b[1] * a[0]) / norm(ab)
 
     def find_path_quad(quad, lay, fun, alpha0_min, alpha0_max):
-        print(quad)
+        #print(quad)
         pos, dir, tr, time = fun(alpha0_min)
         min_line = 1
         p2 = quad[2] - pos
@@ -979,7 +1074,7 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
         p3 = quad[3] - pos
         if vec_ori(p3, dir) > 0:
             min_line = 3
-        print(min_line)
+        #print(min_line)
 
         pos, dir, tr, time = fun(alpha0_max)
         max_line = 1
@@ -989,7 +1084,7 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
         p3 = quad[3] - pos
         if vec_ori(p3, dir) > 0:
             max_line = 3
-        print(max_line)
+        #print(max_line)
 
         ret = []
 
@@ -1008,105 +1103,149 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
                 base_point = min_line + 1
                 line_dir = -1
 
+            q = quad[base_point + line_dir]
+
             def f(alpha0):
                 pos, dir, tr, time = fun(alpha0)
-                p2 = quad[base_point + line_dir] - pos
+                #p2 = quad[base_point + line_dir] - pos
+                p2 = q - pos
                 return vec_ori(p2, dir)
 
-            # todo: nemusi fungovat kdyz uhel bude vetsi necz 90, mozna lepsi bisect - neni monotoni
+            # todo: nemusi fungovat kdyz uhel bude vetsi necz 90, mozna lepsi bisect - neni monotoni, myslim ze mono neni potreba - brenth je vyrazne rychlejsi
             #alpha0 = brenth(f, alpha0_min, alpha0_max, xtol=1e-5)
-            print("-------------------")
-            print(base_line)
-            print(base_point)
-            print(line_dir)
-            print(f(alpha0_min))
-            print(f(alpha0_max))
-            alpha0 = bisect(f, alpha0_min, alpha0_max, xtol=1e-15)
+            # print("-------------------")
+            # print(base_line)
+            # print(base_point)
+            # print(line_dir)
+            # print(alpha0_min)
+            # print(alpha0_max)
+            # print(f(alpha0_min))
+            # print(f(alpha0_max))
+            alpha0 = brenth(f, alpha0_min, alpha0_max, xtol=xtol)
 
-            if abs(max_line - min_line) > 1:
+            if abs(max_line - min_line) > 1 and alpha0_max - alpha0 >= min_alpha0_span:
+                q2 = quad[base_point + 2 * line_dir]
+
                 def f(alpha0):
                     pos, dir, tr, time = fun(alpha0)
-                    p2 = quad[base_point + 2 * line_dir] - pos
+                    #p2 = quad[base_point + 2 * line_dir] - pos
+                    p2 = q2 - pos
                     return vec_ori(p2, dir)
 
-                alpha0_2 = bisect(f, alpha0, alpha0_max, xtol=1e-15)
+                # print(alpha0)
+                # print(alpha0_max)
+                # print(f(alpha0))
+                # print(f(alpha0_max))
+                alpha0_2 = brenth(f, alpha0, alpha0_max, xtol=xtol)
 
+            qa1 = quad[base_line]
+            qa2 = quad[four_is_zero(base_line + 1)]
+
+            @fun_cache
             def fun2(alpha0):
                 pos, dir, tr, time = fun(alpha0)
 
-                new_pos = line_intersect(pos, pos + dir, quad[base_line], quad[four_is_zero(base_line + 1)])
+                #new_pos = line_intersect(pos, pos + dir, quad[base_line], quad[four_is_zero(base_line + 1)])
+                new_pos = line_intersect(qa1, qa2, pos, pos + dir)
 
-                tr = [tr[0] + [new_pos[0]], tr[1] + [new_pos[1]]]
+                if compute_traces:
+                    tr = [tr[0] + [new_pos[0]], tr[1] + [new_pos[1]]]
 
-                time += np.linalg.norm(new_pos - pos) / layers_speed[lay]
+                time += norm(new_pos - pos) / layers_speed[lay + 1]
 
                 return new_pos, dir, tr, time
                 #return pos, dir, trace, time
 
-            ret.append((min_line, fun2, alpha0_min, alpha0))
+            if alpha0 - alpha0_min >= min_alpha0_span:
+                ret.append((min_line, fun2, alpha0_min, alpha0))
 
 
+            qb1 = quad[base_line + line_dir]
+            qb2 = quad[four_is_zero(base_line + line_dir + 1)]
+
+            @fun_cache
             def fun2(alpha0):
                 pos, dir, tr, time = fun(alpha0)
 
                 #print(min_line)
-                new_pos = line_intersect(pos, pos + dir, quad[base_line + line_dir], quad[four_is_zero(base_line + line_dir + 1)])
+                #new_pos = line_intersect(pos, pos + dir, quad[base_line + line_dir], quad[four_is_zero(base_line + line_dir + 1)])
+                new_pos = line_intersect(qb1, qb2, pos, pos + dir)
 
-                tr = [tr[0] + [new_pos[0]], tr[1] + [new_pos[1]]]
+                if compute_traces:
+                    tr = [tr[0] + [new_pos[0]], tr[1] + [new_pos[1]]]
 
-                time += np.linalg.norm(new_pos - pos) / layers_speed[lay]
+                time += norm(new_pos - pos) / layers_speed[lay + 1]
 
                 return new_pos, dir, tr, time
 
-            if max_line - min_line > 1:
-                ret.append((min_line + line_dir, fun2, alpha0, alpha0_2))
+            if abs(max_line - min_line) > 1 and alpha0_max - alpha0 >= min_alpha0_span:
+                if alpha0_2 - alpha0 >= min_alpha0_span:
+                    ret.append((min_line + line_dir, fun2, alpha0, alpha0_2))
             else:
-                ret.append((min_line + line_dir, fun2, alpha0, alpha0_max))
+                if alpha0_max - alpha0 >= min_alpha0_span:
+                    ret.append((min_line + line_dir, fun2, alpha0, alpha0_max))
 
-            if abs(max_line - min_line) > 1:
+            if abs(max_line - min_line) > 1 and alpha0_max - alpha0 >= min_alpha0_span:
+                qc1 = quad[base_line + 2 * line_dir]
+                qc2 = quad[four_is_zero(base_line + 2 * line_dir + 1)]
+
+                @fun_cache
                 def fun2(alpha0):
                     pos, dir, tr, time = fun(alpha0)
 
                     #print(min_line)
-                    new_pos = line_intersect(pos, pos + dir, quad[base_line + 2 * line_dir], quad[four_is_zero(base_line + 2 * line_dir + 1)])
+                    #new_pos = line_intersect(pos, pos + dir, quad[base_line + 2 * line_dir], quad[four_is_zero(base_line + 2 * line_dir + 1)])
+                    new_pos = line_intersect(qc1, qc2, pos, pos + dir)
 
-                    tr = [tr[0] + [new_pos[0]], tr[1] + [new_pos[1]]]
+                    if compute_traces:
+                        tr = [tr[0] + [new_pos[0]], tr[1] + [new_pos[1]]]
 
-                    time += np.linalg.norm(new_pos - pos) / layers_speed[lay]
+                    time += norm(new_pos - pos) / layers_speed[lay + 1]
 
                     return new_pos, dir, tr, time
 
-                ret.append((min_line + 2 * line_dir, fun2, alpha0_2, alpha0_max))
+                if alpha0_max - alpha0_2 >= min_alpha0_span:
+                    ret.append((min_line + 2 * line_dir, fun2, alpha0_2, alpha0_max))
         else:
+            qd1 = quad[min_line]
+            qd2 = quad[four_is_zero(min_line + 1)]
+
+            @fun_cache
             def fun2(alpha0):
                 pos, dir, tr, time = fun(alpha0)
 
-                new_pos = line_intersect(pos, pos + dir, quad[min_line], quad[four_is_zero(min_line + 1)])
+                #new_pos = line_intersect(pos, pos + dir, quad[min_line], quad[four_is_zero(min_line + 1)])
+                new_pos = line_intersect(qd1, qd2, pos, pos + dir)
 
-                tr = [tr[0] + [new_pos[0]], tr[1] + [new_pos[1]]]
+                if compute_traces:
+                    tr = [tr[0] + [new_pos[0]], tr[1] + [new_pos[1]]]
 
-                time += np.linalg.norm(new_pos - pos) / layers_speed[lay]
+                time += norm(new_pos - pos) / layers_speed[lay + 1]
 
                 return new_pos, dir, tr, time
 
-            ret.append((min_line, fun2, alpha0_min, alpha0_max))
+            if alpha0_max - alpha0_min >= min_alpha0_span:
+                ret.append((min_line, fun2, alpha0_min, alpha0_max))
 
-        print(ret)
+        #print(ret)
         return ret
 
-    def find_path_lay(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc):
-        if lay == 0:
-            find_path_receiver(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc)
-            find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc)
+    def find_path_lay(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
+        if lay > 0:
+            hit_seg_list = hit_seg_list + [(lay, seg)]
+
+        if False:#lay == 0:
+            find_path_receiver(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
+            find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
 
         else:
             if depth >= max_depth:
                 return
             depth += 1
 
-            n = normalize(np.array([layers_geo[lay][seg] - layers_geo[lay][seg + 1], grid[seg + 1] - grid[seg]]))
+            n = normalize(V2((layers_geo[lay][seg] - layers_geo[lay][seg + 1], grid[seg + 1] - grid[seg])))
             pos_min, dir_min, _, _ = fun(alpha0_min)
-            if vec_ori(np.array([grid[seg + 1], layers_geo[lay][seg + 1]]) - np.array([grid[seg], layers_geo[lay][seg]]), dir_min) > 0.0:
+            if vec_ori(V2((grid[seg + 1], layers_geo[lay][seg + 1])) - V2((grid[seg], layers_geo[lay][seg])), dir_min) > 0.0:
                 n = -n
 
             #pos_min, dir_min, _ = fun(alpha0_min)
@@ -1119,24 +1258,39 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
                     pos, dir, tr, time = fun(alpha0)
                     return vec_ori(n, dir)
 
-                alpha0 = bisect(f, alpha0_min, alpha0_max, xtol=1e-15)
+                alpha0 = brenth(f, alpha0_min, alpha0_max, xtol=xtol)
 
-                find_path_lay2(lay, seg, fun, alpha0_min, alpha0, depth, source_loc)
-                find_path_lay2(lay, seg, fun, alpha0, alpha0_max, depth, source_loc)
+                priority = priority_fun(fun, alpha0_min, alpha0, source_loc)
+                if not math.isinf(priority) or compute_traces:
+                    pq_push(priority, find_path_lay2, (lay, seg, fun, alpha0_min, alpha0, depth, source_loc, hit_seg_list))
+
+                priority = priority_fun(fun, alpha0, alpha0_max, source_loc)
+                if not math.isinf(priority) or compute_traces:
+                    pq_push(priority, find_path_lay2, (lay, seg, fun, alpha0, alpha0_max, depth, source_loc, hit_seg_list))
             else:
-                find_path_lay2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc)
+                priority = priority_fun(fun, alpha0_min, alpha0_max, source_loc)
+                if not math.isinf(priority) or compute_traces:
+                    pq_push(priority, find_path_lay2, (lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list))
 
-    def find_path_lay2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc):
-        n = normalize(np.array([layers_geo[lay][seg] - layers_geo[lay][seg + 1], grid[seg + 1] - grid[seg]]))
+    def find_path_lay2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
+        if lay == 0:
+            find_path_receiver(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
+            find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
+            return
+
+        # todo: predpocitat
+        n = normalize(V2((layers_geo[lay][seg] - layers_geo[lay][seg + 1], grid[seg + 1] - grid[seg])))
         pos_min, dir_min, _, _ = fun(alpha0_min)
-        print("dir")
-        print(dir_min)
+        #print("dir")
+        #print(dir_min)
 
-        speed_ratio = layers_speed[lay] / layers_speed[lay - 1]
+        speed_ratio = layers_speed[lay + 1] / layers_speed[lay]
 
-        if vec_ori(np.array([grid[seg + 1], layers_geo[lay][seg + 1]]) - np.array([grid[seg], layers_geo[lay][seg]]), dir_min) > 0.0:
+        upward_ray = False
+        if vec_ori(V2((grid[seg + 1], layers_geo[lay][seg + 1])) - V2((grid[seg], layers_geo[lay][seg])), dir_min) > 0.0:
             n = -n
             speed_ratio = 1.0 / speed_ratio
+            upward_ray = True
 
         def min_max(a, b):
             if a > b:
@@ -1144,7 +1298,7 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
             return a, b
 
 
-        print(n)
+        #print(n)
         if speed_ratio > 1.0:
 
 
@@ -1153,11 +1307,12 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
 
                 i = dir
 
-                cos_i = -np.dot(i, n)
+                cos_i = -dot(i, n)
                 sin_t2 = (speed_ratio) ** 2 * (1 - cos_i ** 2)
 
                 return sin_t2 - 1.0
 
+            # todo: zbytecne se pocita fun, muze se vyjit z predchoziho vypoctu
             f_min = f(alpha0_min)
             f_max = f(alpha0_max)
 
@@ -1166,24 +1321,72 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
                 alpha0_min, alpha0_max = alpha0_max, alpha0_min
 
             if (f_min > 0.0 and f_max < 0.0) or (f_min < 0.0 and f_max > 0.0):
-                alpha0_2 = bisect(f, alpha0_min, alpha0_max, xtol=1e-15)
+                alpha0_2 = brenth(f, alpha0_min, alpha0_max, xtol=xtol)
 
+            #def fa():
             if f_min < 0.0:
+                @fun_cache
+                def fun2(alpha0):
+                    pos, dir, tr, time = fun(alpha0)
+                    i = dir
+                    cos_i = -dot(i, n)
+                    sin_t2 = (speed_ratio) ** 2 * (1 - cos_i ** 2)
+                    if sin_t2 > 1.0:
+                        #print("sin!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                        sin_t2 = 1.0
+                    t = i * (speed_ratio) + n * ((speed_ratio) * cos_i - math.sqrt(1.0 - sin_t2))
+                    dir = t
+                    return pos, dir, tr, time
 
+                if f_max > 0.0:
+                    if lay >= len(layers_geo) - 1:
+                        find_path_test(lay, seg, fun, *min_max(alpha0_min, alpha0_2), depth, source_loc, hit_seg_list)
+                    else:
+                        find_path_lay3(lay, seg, fun2, *min_max(alpha0_min, alpha0_2), depth, source_loc, hit_seg_list)
+                else:
+                    if lay >= len(layers_geo) - 1:
+                        find_path_test(lay, seg, fun, *min_max(alpha0_min, alpha0_max), depth, source_loc, hit_seg_list)
+                    else:
+                        find_path_lay3(lay, seg, fun2, *min_max(alpha0_min, alpha0_max), depth, source_loc, hit_seg_list)
 
+            #def fb():
+            if f_max > 0.0:
+                @fun_cache
+                def fun2(alpha0):
+                    pos, dir, tr, time = fun(alpha0)
+                    i = dir
+                    cos_i = -dot(i, n)
+                    r = i + n * 2 * cos_i
+                    dir = r
+                    return pos, dir, tr, time
 
+                if f_min < 0.0:
+                    find_path_lay3(lay, seg, fun2, *min_max(alpha0_2, alpha0_max), depth, source_loc, hit_seg_list)
+                else:
+                    find_path_lay3(lay, seg, fun2, *min_max(alpha0_min, alpha0_max), depth, source_loc, hit_seg_list)
+
+            # if upward_ray:
+            #     fb()
+            #     fa()
+            # else:
+            #     fa()
+            #     fb()
+        else:
+            if lay >= len(layers_geo) - 1:
+                find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
+            else:
+
+                @fun_cache
                 def fun2(alpha0):
                     pos, dir, tr, time = fun(alpha0)
 
                     i = dir
 
-                    cos_i = -np.dot(i, n)
+                    cos_i = -dot(i, n)
                     sin_t2 = (speed_ratio) ** 2 * (1 - cos_i ** 2)
-                    # print("sin_t2")
-                    # print(sin_t2)
-                    # print("sin_t2 - 1.0")
-                    # print(sin_t2 - 1.0)
+
                     if sin_t2 > 1.0:
+                        print("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
                         sin_t2 = 1.0
 
                     t = i * (speed_ratio) \
@@ -1192,266 +1395,512 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
                     dir = t
                     # print(dir)
 
-                    return pos, dir, tr, time
-
-                if f_max > 0.0:
-                    if lay >= len(layers_geo) - 1:
-                        find_path_test(lay, seg, fun, *min_max(alpha0_min, alpha0_2), depth, source_loc)
-                    else:
-                        find_path_lay3(lay, seg, fun2, *min_max(alpha0_min, alpha0_2), depth, source_loc)
-                else:
-                    if lay >= len(layers_geo) - 1:
-                        find_path_test(lay, seg, fun, *min_max(alpha0_min, alpha0_max), depth, source_loc)
-                    else:
-                        find_path_lay3(lay, seg, fun2, *min_max(alpha0_min, alpha0_max), depth, source_loc)
-
-            if f_max > 0.0:
-                def fun2(alpha0):
-                    pos, dir, tr, time = fun(alpha0)
-
-                    i = dir
-
-                    cos_i = -np.dot(i, n)
-
-                    r = i + n * 2 * cos_i
-
-                    dir = r
-                    # print(dir)
 
                     return pos, dir, tr, time
 
-                if f_min < 0.0:
-                    find_path_lay3(lay, seg, fun2, *min_max(alpha0_2, alpha0_max), depth, source_loc)
-                else:
-                    print("opppppppppppppppppppppp")
-                    print(f_min)
-                    print(f_max)
-                    #if not lay >= len(layers_geo) - 1:
-                    find_path_lay3(lay, seg, fun2, *min_max(alpha0_min, alpha0_max), depth, source_loc)
-                    # else:
-                    #     find_path_test2(fun2, alpha0_min, alpha0_max, depth, source_loc)
-        else:
-            if lay >= len(layers_geo) - 1:
-                find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc)
-                print(lay)
-                #1/0
-            else:
+                find_path_lay3(lay, seg, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
 
-                def fun2(alpha0):
-                    pos, dir, tr, time = fun(alpha0)
-
-                    i = dir
-
-                    cos_i = -np.dot(i, n)
-                    sin_t2 = (speed_ratio) ** 2 * (1 - cos_i ** 2)
-
-                    t = i * (speed_ratio) \
-                        + n * ((speed_ratio) * cos_i - math.sqrt(1.0 - sin_t2))
-
-                    dir = t
-                    # print(dir)
-
-
-                    return pos, dir, tr, time
-
-                find_path_lay3(lay, seg, fun2, alpha0_min, alpha0_max, depth, source_loc)
-
-    def find_path_lay3(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc):
+    def find_path_lay3(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
         # todo: staci opravdu alpha0_min? asi muze byt rovnobezne, muzu dat neco mezi min max
         pos_min, dir_min, _, _ = fun(alpha0_min)
         pos_max, dir_max, _, _ = fun(alpha0_max)
-        print(dir_min)
-        print("ori !!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print(vec_ori(np.array([grid[seg + 1], layers_geo[lay][seg + 1]]) - np.array([grid[seg], layers_geo[lay][seg]]), dir_min))
-        print(vec_ori(np.array([grid[seg + 1], layers_geo[lay][seg + 1]]) - np.array([grid[seg], layers_geo[lay][seg]]), dir_max))
-        if vec_ori(np.array([grid[seg + 1], layers_geo[lay][seg + 1]]) - np.array([grid[seg], layers_geo[lay][seg]]), dir_min) > 0.0:
+        # print(dir_min)
+        # print("ori !!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        # print(vec_ori(np.array([grid[seg + 1], layers_geo[lay][seg + 1]]) - np.array([grid[seg], layers_geo[lay][seg]]), dir_min))
+        # print(vec_ori(np.array([grid[seg + 1], layers_geo[lay][seg + 1]]) - np.array([grid[seg], layers_geo[lay][seg]]), dir_max))
+        if vec_ori(V2((grid[seg + 1], layers_geo[lay][seg + 1])) - V2((grid[seg], layers_geo[lay][seg])), dir_min) > 0.001:
         #if dir_min[1] > 0:
-            quad = [np.array([grid[seg], layers_geo[lay][seg]]),
-                    np.array([grid[seg + 1], layers_geo[lay][seg]]),
-                    np.array([grid[seg + 1], layers_geo[lay - 1][seg + 1]]),
-                    np.array([grid[seg], layers_geo[lay - 1][seg]])]
+            quad = [V2((grid[seg], layers_geo[lay][seg])),
+                    V2((grid[seg + 1], layers_geo[lay][seg])),
+                    V2((grid[seg + 1], layers_geo[lay - 1][seg + 1])),
+                    V2((grid[seg], layers_geo[lay - 1][seg]))]
             # print(alpha0_min)
             # print(alpha0_max)
             # alpha0_min = 1.0
-            print("tadygggggggggggggggggg")
-            q_ret = find_path_quad(quad, lay, fun, alpha0_min, alpha0_max)
-            print(q_ret)
+            #print("tadygggggggggggggggggg")
+            try:
+                q_ret = find_path_quad(quad, lay - 1, fun, alpha0_min, alpha0_max)
+            except ValueError:
+                return
+            #print(q_ret)
+
+            # first process upward ray
+            #q_ret = sorted(q_ret, key=lambda x: x[0] != 2)
+
 
             for line, fun2, alpha0_min, alpha0_max in q_ret:
                 if line == 1:
-                    find_path_grid(lay - 1, seg + 1, fun2, alpha0_min, alpha0_max, depth, source_loc)
-                    pass
+                    find_path_grid(lay - 1, seg + 1, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                 elif line == 2:
-
-                    #find_path_test(fun2, alpha0_min, alpha0_max, depth, source_loc)
-                    find_path_lay(lay - 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc)
+                    find_path_lay(lay - 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                 else:
-                    find_path_grid(lay - 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc)
-                    pass
-        else:
-            print(seg)
-            print(lay)
+                    find_path_grid(lay - 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
+        elif vec_ori(V2((grid[seg + 1], layers_geo[lay][seg + 1])) - V2((grid[seg], layers_geo[lay][seg])), dir_min) < 0.001:
+        #else:
+            # print(seg)
+            # print(lay)
             # if lay == 3:
             #     1/0
-            quad = [np.array([grid[seg + 1], layers_geo[lay][seg + 1]]),
-                    np.array([grid[seg], layers_geo[lay][seg]]),
-                    np.array([grid[seg], layers_geo[lay + 1][seg]]),
-                    np.array([grid[seg + 1], layers_geo[lay + 1][seg + 1]])]
+            quad = [V2((grid[seg + 1], layers_geo[lay][seg + 1])),
+                    V2((grid[seg], layers_geo[lay][seg])),
+                    V2((grid[seg], layers_geo[lay + 1][seg])),
+                    V2((grid[seg + 1], layers_geo[lay + 1][seg + 1]))]
             # print(alpha0_min)
             # print(alpha0_max)
             # alpha0_min = 1.0
-            q_ret = find_path_quad(quad, lay, fun, alpha0_min, alpha0_max)
+            try:
+                q_ret = find_path_quad(quad, lay, fun, alpha0_min, alpha0_max)
+            except ValueError:
+                return
 
             for line, fun2, alpha0_min, alpha0_max in q_ret:
                 if line == 1:
-                    find_path_grid(lay, seg, fun2, alpha0_min, alpha0_max, depth, source_loc)
-                    pass
+                    find_path_grid(lay, seg, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                 elif line == 2:
-
-                    #find_path_test(fun2, alpha0_min, alpha0_max, depth, source_loc)
-                    find_path_lay(lay + 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc)
-                    #find_path_grid(lay, seg + 1, fun2, alpha0_min, alpha0_max, depth, source_loc)
+                    find_path_lay(lay + 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                 else:
-                    find_path_grid(lay, seg + 1, fun2, alpha0_min, alpha0_max, depth, source_loc)
-                    pass
+                    find_path_grid(lay, seg + 1, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
 
 
-    def find_path_grid(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc):
+    def find_path_grid(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
         pos_min, dir_min, _, _ = fun(alpha0_min)
 
-        # if dir_min[0] < 0:
-        #     find_path_test2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc)
-        # find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc)
-        # return
-
         if (seg == 0 and dir_min[0] < 0.0) or (seg >= len(grid) - 1 and dir_min[0] > 0.0) or depth >= max_depth:
-            find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc)
+            find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
+        else:
+
+            pos_max, dir_max, _, _ = fun(alpha0_max)
+
+            if (dir_min[1] > 0.0 and dir_max[1] < 0.0) or (dir_min[1] < 0.0 and dir_max[1] > 0.0):
+                def f(alpha0):
+                    pos, dir, tr, time = fun(alpha0)
+                    return dir[1]
+
+                alpha0 = brenth(f, alpha0_min, alpha0_max, xtol=xtol)
+
+                priority = priority_fun(fun, alpha0_min, alpha0, source_loc)
+                if not math.isinf(priority) or compute_traces:
+                    pq_push(priority, find_path_grid2, (lay, seg, fun, alpha0_min, alpha0, depth, source_loc, hit_seg_list))
+
+                priority = priority_fun(fun, alpha0, alpha0_max, source_loc)
+                if not math.isinf(priority) or compute_traces:
+                    pq_push(priority, find_path_grid2, (lay, seg, fun, alpha0, alpha0_max, depth, source_loc, hit_seg_list))
+            else:
+                priority = priority_fun(fun, alpha0_min, alpha0_max, source_loc)
+                if not math.isinf(priority) or compute_traces:
+                    pq_push(priority, find_path_grid2, (lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list))
+
+    def find_path_grid2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
+        pos_min, dir_min, _, time_min = fun(alpha0_min)
+
+        if False:#(seg == 0 and dir_min[0] < 0.0) or (seg >= len(grid) - 1 and dir_min[0] > 0.0) or depth >= max_depth:
+            find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
         else:
             depth += 1
 
-            if dir_min[0] > 0.0:
-                quad = [np.array([grid[seg], layers_geo[lay][seg]]),
-                        np.array([grid[seg], layers_geo[lay + 1][seg]]),
-                        np.array([grid[seg + 1], layers_geo[lay + 1][seg + 1]]),
-                        np.array([grid[seg + 1], layers_geo[lay][seg + 1]])]
-                q_ret = find_path_quad(quad, lay, fun, alpha0_min, alpha0_max)
+            if dir_min[0] > 0.001:
+                quad = [V2((grid[seg], layers_geo[lay][seg])),
+                        V2((grid[seg], layers_geo[lay + 1][seg])),
+                        V2((grid[seg + 1], layers_geo[lay + 1][seg + 1])),
+                        V2((grid[seg + 1], layers_geo[lay][seg + 1]))]
+                try:
+                    q_ret = find_path_quad(quad, lay, fun, alpha0_min, alpha0_max)
+                except ValueError:
+                    return
 
                 for line, fun2, alpha0_min, alpha0_max in q_ret:
                     if line == 1:
-                        find_path_lay(lay + 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc)
+                        find_path_lay(lay + 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                     elif line == 2:
-                        find_path_grid(lay, seg + 1, fun2, alpha0_min, alpha0_max, depth, source_loc)
+                        find_path_grid(lay, seg + 1, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                     else:
-                        find_path_lay(lay, seg, fun2, alpha0_min, alpha0_max, depth, source_loc)
-            else:
-                quad = [np.array([grid[seg], layers_geo[lay + 1][seg]]),
-                        np.array([grid[seg], layers_geo[lay][seg]]),
-                        np.array([grid[seg - 1], layers_geo[lay][seg - 1]]),
-                        np.array([grid[seg - 1], layers_geo[lay + 1][seg - 1]])]
-                q_ret = find_path_quad(quad, lay, fun, alpha0_min, alpha0_max)
+                        find_path_lay(lay, seg, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
+            elif dir_min[0] < 0.001:
+                quad = [V2((grid[seg], layers_geo[lay + 1][seg])),
+                        V2((grid[seg], layers_geo[lay][seg])),
+                        V2((grid[seg - 1], layers_geo[lay][seg - 1])),
+                        V2((grid[seg - 1], layers_geo[lay + 1][seg - 1]))]
+                try:
+                    q_ret = find_path_quad(quad, lay, fun, alpha0_min, alpha0_max)
+                except ValueError:
+                    return
 
                 for line, fun2, alpha0_min, alpha0_max in q_ret:
                     if line == 1:
-                        find_path_lay(lay, seg - 1, fun2, alpha0_min, alpha0_max, depth, source_loc)
+                        find_path_lay(lay, seg - 1, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                     elif line == 2:
-                        find_path_grid(lay, seg - 1, fun2, alpha0_min, alpha0_max, depth, source_loc)
+                        find_path_grid(lay, seg - 1, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                     else:
-                        find_path_lay(lay + 1, seg - 1, fun2, alpha0_min, alpha0_max, depth, source_loc)
+                        find_path_lay(lay + 1, seg - 1, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
 
 
-    def find_path_receiver(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc):
+    def find_path_receiver(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
+        #return
+        num = 0
         receivers = required_first_arrival_dict[source_loc]
         for rec_loc in receivers:
-            pos, rec_seg = find_source_pos(rec_loc)
-            print(seg)
-            print(fun(alpha0_min)[0][0])
-            print(fun(alpha0_max)[0][0])
-            if rec_seg == seg and (fun(alpha0_min)[0][0] <= rec_loc <= fun(alpha0_max)[0][0] or fun(alpha0_min)[0][0] >= rec_loc >= fun(alpha0_max)[0][0]):
-                def f(alpha0):
-                    pos, dir, tr, time = fun(alpha0)
-                    return pos[0] - rec_loc
+            pos, rec_seg_list = find_source_pos(rec_loc)
+            for rec_seg in rec_seg_list:
+                # print(seg)
+                # print(fun(alpha0_min)[0][0])
+                # print(fun(alpha0_max)[0][0])
+                # todo: poresit pripad, ze je receiver na kraji segmentu, diky numerice muze byt mimo interval
+                if rec_seg == seg and (fun(alpha0_min)[0][0] <= rec_loc <= fun(alpha0_max)[0][0] or fun(alpha0_min)[0][0] >= rec_loc >= fun(alpha0_max)[0][0]):
+                    min_time = min(fun(alpha0_min)[3], fun(alpha0_max)[3])
+                    if min_time < first_arrival[(source_loc, rec_loc)] or (return_traces and not test_traces):
+                        def f(alpha0):
+                            pos, dir, tr, time = fun(alpha0)
+                            return pos[0] - rec_loc
 
-                alpha0 = brenth(f, alpha0_min, alpha0_max, xtol=1e-10)
-                pos, dir, tr, time = fun(alpha0)
-                if time < first_arrival[(source_loc, rec_loc)]:
-                    first_arrival[(source_loc, rec_loc)] = time
+                        num += 1
+                        alpha0 = brenth(f, alpha0_min, alpha0_max, xtol=xtol)
+                        pos, dir, tr, time = fun(alpha0)
+                    else:
+                        time = math.inf
+                    if time < first_arrival[(source_loc, rec_loc)]:
+                        first_arrival[(source_loc, rec_loc)] = time
 
-                trx = []
-                trx.append([tr[0], tr[1], True])
-                traces.append(trx)
+                        if return_traces and not test_traces:
+                            if (source_loc, rec_loc) in traces_map:
+                                trx = traces[traces_map[(source_loc, rec_loc)]]
+                            else:
+                                trx = []
+                                traces.append(trx)
+                                traces_map[(source_loc, rec_loc)] = len(traces) - 1
+                            trx.insert(0, [tr[0], tr[1], True, (source_loc, rec_loc), time])
+
+                        hit_seg_map[(source_loc, rec_loc)] = hit_seg_list
+                    else:
+                        if return_traces and not test_traces:
+                            if (source_loc, rec_loc) in traces_map:
+                                trx = traces[traces_map[(source_loc, rec_loc)]]
+                            else:
+                                trx = []
+                                traces.append(trx)
+                                traces_map[(source_loc, rec_loc)] = len(traces) - 1
+                            trx.append([tr[0], tr[1], False, (source_loc, rec_loc), time])
+        #print(num)
 
 
-    def find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc):
+
+    def find_path_test(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
         pass
-        find_path_test2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc)
+        #print("test")
+        find_path_test2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
 
-    def find_path_test2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc):
+    num_path = 0
+    num_no_mono = 0
+
+    def find_path_test2(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
+        nonlocal num_path, num_no_mono
+
         #return
-        trx = []
-        for i in range(10):
-            pos, dir, tr, time = fun(alpha0_min + (alpha0_max - alpha0_min) / 10 * i)
-            # print(tr)
-            trx.append([tr[0], tr[1], True])
-        traces.append(trx)
+        if test_traces:
+            #print(alpha0_min, alpha0_max)
 
-    lay = 0
+
+            num_path += 1
+            trx = []
+            mono = []
+            n = 10
+            for i in range(n):
+                pos, dir, tr, time = fun(alpha0_min + (alpha0_max - alpha0_min) / n * i)
+                # print(tr)
+                trx.append([tr[0], tr[1], True, (source_loc, 0.0), time])
+
+                mono.append(time)
+
+            # mono test
+            up = True
+            down = True
+            for i in range(1, len(mono)):
+                if mono[i] < mono[i - 1]:
+                    up = False
+                if mono[i] > mono[i - 1]:
+                    down = False
+            if not up and not down:
+                num_no_mono += 1
+                # print("neni mono")
+                # print(alpha0_max - alpha0_min)
+                # print(mono)
+                #plt.plot(mono)
+                #plt.show()
+
+
+                #if num_no_mono == 1:
+            traces.append(trx)
+
+    def mono_test(fun, alpha0_min, alpha0_max):
+        mono = []
+        n = 100
+        for i in range(n):
+            pos, dir, tr, time = fun(alpha0_min + (alpha0_max - alpha0_min) / n * i)
+            mono.append(time)
+        up = True
+        down = True
+        for i in range(1, len(mono)):
+            if mono[i] < mono[i - 1]:
+                up = False
+            if mono[i] > mono[i - 1]:
+                down = False
+        if not up and not down:
+            print("neni mono")
+            #raise KeyboardInterrupt
+            # print(alpha0_max - alpha0_min)
+            # print(mono)
+            plt.plot(mono)
+            plt.show()
+
+    def get_max_time(source_loc):
+        max_time = 0.0
+        for rl in required_first_arrival_dict[source_loc]:
+            if first_arrival[(source_loc, rl)] > max_time:
+                max_time = first_arrival[(source_loc, rl)]
+        return max_time
+
+    def priority_fun(fun, alpha0_min, alpha0_max, source_loc):
+        #return 0.0
+        #mono_test(fun, alpha0_min, alpha0_max)
+        pos_min, _, _, time_min = fun(alpha0_min)
+        pos_max, _, _, time_max = fun(alpha0_max)
+        min_time = min(time_min, time_max)
+
+        # max_y_pos = max(pos_min[1], pos_max[1])
+        # min_surf = min(layers_geo[0])
+        # if max_y_pos < min_surf:
+        #     min_time += (min_surf - max_y_pos) / max_inside_speed
+        #
+        # mt = get_max_time(source_loc)
+        # if min_time >= mt:
+        #     return math.inf
+        # else:
+        #     return min_time
+
+        priority = math.inf
+        for rl in required_first_arrival_dict[source_loc]:
+            rec_pos, _ = find_source_pos(rl)
+            if min_time >= priority:# or min_time >= first_arrival[(source_loc, rl)]:
+                break
+            if min_time >= first_arrival[(source_loc, rl)]:
+                continue
+            t = min_time + line_point_dist(pos_min, pos_max, rec_pos) / max_inside_speed
+            if t < first_arrival[(source_loc, rl)]:
+                if t < priority:
+                    priority = t
+        return priority
+
 
     def find_path_first(source_loc):
-        source = find_source_pos(source_loc)
-
-        def fun(alpha0):
-            pos = np.array([grid[source[1]], source[0][1] - (source[0][0] - grid[source[1]]) * math.tan(alpha0 + math.pi / 2)])
-            dir = (pos - source[0]) / np.linalg.norm(pos - source[0])
-            tr = [[source[0][0], pos[0]], [source[0][1], pos[1]]]
-            time = np.linalg.norm(pos - source[0]) / layers_speed[0]
-            return pos, dir, tr, time
-
-        alpha0_min = math.atan2(-source[0][0] + grid[source[1]], source[0][1] - layers_geo[0][source[1]])
-        #alpha0_max = math.atan2(-source[0][0] + grid[source[1]], source[0][1] - layers_geo[1][source[1]])
-        alpha0_max = math.atan2(source[0][1] - layers_geo[1][source[1]], source[0][0] - grid[source[1]]) - math.pi / 2
-        print(alpha0_min)
-        print(alpha0_max)
-        find_path_grid(0, source[1], fun, alpha0_min, alpha0_max, 1, source_loc)
-        #find_path_test(fun, alpha0_min, alpha0_max, depth, source_loc)
-
-        alpha0_min = math.atan2(source[0][1] - layers_geo[1][source[1]], source[0][0] - grid[source[1]]) - math.pi / 2
-        alpha0_max = math.atan2(-source[0][1] + layers_geo[1][source[1] + 1], -source[0][0] + grid[source[1] + 1]) + math.pi / 2
-
-        def fun(alpha0):
-            lay_dir = (np.array([grid[source[1] + 1] - grid[source[1]], layers_geo[1][source[1] + 1] - layers_geo[1][source[1]]])) / np.linalg.norm(np.array([grid[source[1] + 1] - grid[source[1]], layers_geo[1][source[1] + 1] - layers_geo[1][source[1]]]))
-            lay_len = np.linalg.norm(np.array([grid[source[1] + 1] - grid[source[1]], layers_geo[1][source[1] + 1] - layers_geo[1][source[1]]]))
-            pos = np.array([grid[source[1]], layers_geo[1][source[1]]]) + lay_dir * (lay_len / (alpha0_max - alpha0_min)) * (alpha0 - alpha0_min)
-            dir = (pos - source[0]) / np.linalg.norm(pos - source[0])
-            tr = [[source[0][0], pos[0]], [source[0][1], pos[1]]]
-            time = np.linalg.norm(pos - source[0]) / layers_speed[0]
-            return pos, dir, tr, time
-
-        find_path_lay(1, source[1], fun, alpha0_min, alpha0_max, 1, source_loc)
-        #find_path_test(fun, alpha0_min, alpha0_max, depth, source_loc)
-
-        def fun(alpha0):
-            pos = np.array([grid[source[1] + 1], source[0][1] + (-source[0][0] + grid[source[1] + 1]) * math.tan(alpha0 - math.pi / 2)])
-            dir = (pos - source[0]) / np.linalg.norm(pos - source[0])
-            tr = [[source[0][0], pos[0]], [source[0][1], pos[1]]]
-            time = np.linalg.norm(pos - source[0]) / layers_speed[0]
-            return pos, dir, tr, time
 
 
-        alpha0_min = math.atan2(-source[0][1] + layers_geo[1][source[1] + 1], -source[0][0] + grid[source[1] + 1]) + math.pi / 2
-        alpha0_max = math.atan2(-source[0][1] + layers_geo[0][source[1] + 1], -source[0][0] + grid[source[1] + 1]) + math.pi / 2
-        find_path_grid(0, source[1] + 1, fun, alpha0_min, alpha0_max, 1, source_loc)
-        #find_path_test(fun, alpha0_min, alpha0_max, depth, source_loc)
+
+        source_x = find_source_pos(source_loc)
+
+
+        def fff1(seg):
+            source = (source_x[0], seg)
+            if source_loc != grid[seg]:
+                @fun_cache
+                def fun(alpha0):
+                    pos = V2((grid[source[1]], source[0][1] - (source[0][0] - grid[source[1]]) * math.tan(alpha0 + math.pi / 2)))
+                    nps = norm(pos - source[0])
+                    dir = (pos - source[0]) / nps
+                    if compute_traces:
+                        trace = [[source[0][0], pos[0]], [source[0][1], pos[1]]]
+                    else:
+                        trace = []
+                    time = nps / layers_speed[1]
+                    return pos, dir, trace, time
+
+                alpha0_min = math.atan2(-source[0][0] + grid[source[1]], source[0][1] - layers_geo[0][source[1]])
+                alpha0_max = math.atan2(source[0][1] - layers_geo[1][source[1]], source[0][0] - grid[source[1]]) - math.pi / 2
+                if alpha0_max - alpha0_min >= min_alpha0_span:
+                    find_path_grid(0, source[1], fun, alpha0_min, alpha0_max, 1, source_loc, [])
+                    # priority = priority_fun(fun, alpha0_min, alpha0_max, source_loc)
+                    # if not math.isinf(priority) or compute_traces:
+                    #     pq_push(priority, find_path_grid, (0, source[1], fun, alpha0_min, alpha0_max, 1, source_loc))
+                    #find_path_test(0, seg, fun, alpha0_min, alpha0_max, 1, source_loc)
+
+        def fff2(seg):
+            source = (source_x[0], seg)
+
+            alpha0_min = math.atan2(source[0][1] - layers_geo[1][source[1]], source[0][0] - grid[source[1]]) - math.pi / 2
+            alpha0_max = math.atan2(-source[0][1] + layers_geo[1][source[1] + 1], -source[0][0] + grid[source[1] + 1]) + math.pi / 2
+
+            lay_dir = (V2((grid[source[1] + 1] - grid[source[1]],
+                                 layers_geo[1][source[1] + 1] - layers_geo[1][source[1]]))) / norm(V2(
+                (grid[source[1] + 1] - grid[source[1]], layers_geo[1][source[1] + 1] - layers_geo[1][source[1]])))
+            lay_len = norm(V2(
+                (grid[source[1] + 1] - grid[source[1]], layers_geo[1][source[1] + 1] - layers_geo[1][source[1]])))
+            aaa = lay_dir * (lay_len / (alpha0_max - alpha0_min))
+
+            @fun_cache
+            def fun(alpha0):
+                pos = V2((grid[source[1]], layers_geo[1][source[1]])) + aaa * (alpha0 - alpha0_min)
+                nps = norm(pos - source[0])
+                dir = (pos - source[0]) / nps
+                if compute_traces:
+                    trace = [[source[0][0], pos[0]], [source[0][1], pos[1]]]
+                else:
+                    trace = []
+                time = nps / layers_speed[1]
+                return pos, dir, trace, time
+
+            if alpha0_max - alpha0_min >= min_alpha0_span:
+                find_path_lay(1, source[1], fun, alpha0_min, alpha0_max, 1, source_loc, [])
+                # priority = priority_fun(fun, alpha0_min, alpha0_max, source_loc)
+                # if not math.isinf(priority) or compute_traces:
+                #     pq_push(priority, find_path_lay, (1, source[1], fun, alpha0_min, alpha0_max, 1, source_loc))
+                #find_path_test(1, seg, fun, alpha0_min, alpha0_max, 1, source_loc)
+
+        def fff3(seg):
+            source = (source_x[0], seg)
+
+            if source_loc != grid[seg + 1]:
+                @fun_cache
+                def fun(alpha0):
+                    pos = V2((grid[source[1] + 1], source[0][1] + (-source[0][0] + grid[source[1] + 1]) * math.tan(alpha0 - math.pi / 2)))
+                    nps = norm(pos - source[0])
+                    dir = (pos - source[0]) / nps
+                    if compute_traces:
+                        trace = [[source[0][0], pos[0]], [source[0][1], pos[1]]]
+                    else:
+                        trace = []
+                    time = nps / layers_speed[1]
+                    return pos, dir, trace, time
+
+
+                alpha0_min = math.atan2(-source[0][1] + layers_geo[1][source[1] + 1], -source[0][0] + grid[source[1] + 1]) + math.pi / 2
+                alpha0_max = math.atan2(-source[0][1] + layers_geo[0][source[1] + 1], -source[0][0] + grid[source[1] + 1]) + math.pi / 2
+                if alpha0_max - alpha0_min >= min_alpha0_span:
+                    find_path_grid(0, source[1] + 1, fun, alpha0_min, alpha0_max, 1, source_loc, [])
+                    # priority = priority_fun(fun, alpha0_min, alpha0_max, source_loc)
+                    # if not math.isinf(priority) or compute_traces:
+                    #     pq_push(priority, find_path_grid, (0, source[1] + 1, fun, alpha0_min, alpha0_max, 1, source_loc))
+                    #find_path_test(0, seg, fun, alpha0_min, alpha0_max, 1, source_loc)
+
+        for seg in source_x[1]:
+            fff1(seg)
+            fff2(seg)
+            fff3(seg)
+
+    # priority queue
+    priority_queue = []
+    pq_item_count = 0
+
+    def pq_clear():
+        nonlocal pq_item_count
+        priority_queue.clear()
+        pq_item_count = 0
+
+    def pq_push(priority, fun, args):
+        nonlocal pq_item_count
+        pq_item_count += 1
+        heapq.heappush(priority_queue, (priority, pq_item_count, fun, args))
+        return pq_item_count
+
+    def pq_pop():
+        priority, pq_item_count, fun, args = heapq.heappop(priority_queue)
+        return priority, pq_item_count, fun, args
+
+    first_arrival = {}
+
+    def surface_arrival():
+        """Arrivals from surface speed."""
+        flat_surface = True
+        first = layers_geo[0][0]
+        for i in range(1, len(grid)):
+            if layers_geo[0][i] != first:
+                flat_surface = False
+
+        surface_speed = layers_speed[0]
+        if not flat_surface:
+            seg_num = len(grid) - 1
+            seg_len = [0.0] * seg_num
+            for i in range(seg_num):
+                seg_len[i] = norm(V2((grid[i + 1], layers_geo[0][i + 1])) - V2((grid[i], layers_geo[0][i])))
+        for rfa in processed:  # todo: processed prejmenovat pokud bude daleko od vytvoreni
+            if rfa[1] == rfa[0]:
+                first_arrival[rfa] = 0.0
+            elif surface_speed == 0.0:
+                first_arrival[rfa] = math.inf
+            elif flat_surface:
+                first_arrival[rfa] = math.fabs(rfa[1] - rfa[0]) / surface_speed
+            else:
+                if rfa[1] > rfa[0]:
+                    left = rfa[0]
+                    right = rfa[1]
+                else:
+                    left = rfa[1]
+                    right = rfa[0]
+                l_pos, l_seg_list = find_source_pos(left)
+                r_pos, r_seg_list = find_source_pos(right)
+                l_seg = max(l_seg_list)
+                r_seg = min(r_seg_list)
+                if r_seg == l_seg:
+                    dist = norm(r_pos - l_pos)
+                else:
+                    dist = norm(V2((grid[l_seg + 1], layers_geo[0][l_seg + 1])) - l_pos) + norm(r_pos - V2((grid[r_seg], layers_geo[0][r_seg])))
+                dist += math.fsum(seg_len[l_seg + 1: r_seg])
+                first_arrival[rfa] = dist / surface_speed
+
+    surface_arrival()
 
     for source_loc in required_first_arrival_dict:
+        pq_clear()
+
         find_path_first(source_loc)
 
-    #print(source)
-    #print(receiver)
+        fid = 0
+        while priority_queue:
+            old_priority, pq_item_id, fun, args = pq_pop()
+            #p = False
+            #print(fun, args)
+            # if fid != pq_item_id:
+            #     priority = priority_fun(*args[2:5], args[6])
+            #     if priority > old_priority and priority_queue and priority > priority_queue[0][0] and not math.isinf(priority):
+            #         id = pq_push(priority, fun, args)
+            #         if fid == 0:
+            #             fid = id
+            #         p = True
+            #         continue
+            #         # todo: muze se zbytecne pocitat znovu priorita puvodni polozky
+            # p = False
+            # fid = 0
+            if not math.isinf(old_priority) or compute_traces:
+                fun(*args)
 
-    return first_arrival, traces
+
+    # inverse first arrivals
+    for rfa in inverse_required_first_arrival:
+        first_arrival[rfa] = first_arrival[(rfa[1], rfa[0])]
+
+    # unmark slow traces
+    if return_traces and not test_traces:
+        for receiver in traces:
+            if len(receiver) >= 2:
+                for i in range(1, len(receiver)):
+                    receiver[i][2] = False
+
+    # hit segments
+    #def hhhh():
+    for k, hit_seg_list in hit_seg_map.items():
+        if (k[1], k[0]) in inverse_required_first_arrival:
+            inc = 2
+        else:
+            inc = 1
+        for lay, seg in hit_seg_list:
+            hit_seg[lay][seg] += inc
+    #hhhh()
+
+    # print("num_path")
+    # print(num_path)
+    #print(num_no_mono)
+
+    return first_arrival, traces, hit_seg
 
 
-def plot_traces_poly(grid, layers_geo, layers_speed, first_arrivals, traces):
+def plot_traces_poly(grid, layers_geo, layers_speed, first_arrivals, traces, hit_seg, ref_first_arrivals=None, show_ref_dif=False, axis_equal=False):
     """
     Plots traces.
     :param grid:
@@ -1459,6 +1908,9 @@ def plot_traces_poly(grid, layers_geo, layers_speed, first_arrivals, traces):
     :param layers_speed:
     :param first_arrivals:
     :param traces:
+    :param ref_first_arrivals:
+    :param show_ref_dif:
+    :param axis_equal:
     :return:
     """
     # borderlines
@@ -1466,6 +1918,24 @@ def plot_traces_poly(grid, layers_geo, layers_speed, first_arrivals, traces):
         plt.plot(grid, lay, "k")
 
     # traces
+    dif_min = 0.0
+    dif_max = 0.0
+    if show_ref_dif:
+        for receiver in traces:
+            for tr in receiver:
+                dif = tr[4] - ref_first_arrivals[tr[3]]
+                if dif < dif_min:
+                    dif_min = dif
+                elif dif > dif_max:
+                    dif_max = dif
+
+        norm = mpl.colors.Normalize(vmin=dif_min, vmax=dif_max)
+        cmap = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.plasma)
+        cmap.set_array([])
+
+        cbar = plt.colorbar(cmap)
+        cbar.ax.set_ylabel("First arrival difference [s]")
+
     for receiver in traces:
         lines = []
         for tr in receiver:
@@ -1482,25 +1952,37 @@ def plot_traces_poly(grid, layers_geo, layers_speed, first_arrivals, traces):
                     lw = 0.5
                     ls = "--"
 
-                lines = plt.plot(tr[0], tr[1], color=color, lw=lw, ls=ls)
+                if show_ref_dif:
+                    dif = tr[4] - ref_first_arrivals[tr[3]]
+                    color = cmap.to_rgba(dif)
 
-    # source location
-    #plt.plot([0.0], [0.0], "gx")
+                lines = plt.plot(tr[0], tr[1], c=color, lw=lw, ls=ls)
 
     # receiver locations
-    #plt.plot(receiver_location, [0.0] * len(receiver_location), "rx")
+    x = list({fa[1] for fa in first_arrivals})
+    plt.plot(x, [0.0] * len(x), "r+")
+
+    # source location
+    x = list({fa[0] for fa in first_arrivals})
+    plt.plot(x, [0.0] * len(x), "gx")
 
     # speed
+    y_span = max(layers_geo[0]) - min(layers_geo[-1])
     for i in range(len(layers_geo)):
         if i < len(layers_geo) - 1:
             y = (layers_geo[i][-1] + layers_geo[i + 1][-1]) / 2
         else:
-            y = layers_geo[i][-1] * 1.5 - layers_geo[i - 1][-1] / 2
-        plt.text(grid[-1] + 1.0, y, "v = {:.0f} m/s".format(layers_speed[i]), va="center")
+            y = layers_geo[i][-1] - y_span / 50
+        plt.text(grid[-1] + 1.0, y, "v = {:.0f} m/s".format(layers_speed[i + 1]), va="center")
 
-    # first arrivals
-    # for rl, fa in zip(receiver_location, first_arrivals):
-    #     plt.text(rl, 1.0, "t = {:.3f} s".format(fa), rotation=45, rotation_mode="anchor")
+    # hit segments
+    for lay in range(len(layers_geo)):
+        for seg in range(len(grid) - 1):
+            num = hit_seg[lay][seg]
+            if num > 0:
+                x = (grid[seg] + grid[seg + 1]) / 2
+                y = (layers_geo[lay][seg] + layers_geo[lay][seg + 1]) / 2 + y_span / 75
+                plt.text(x, y, num, ha="center")
 
     # labels
     plt.title("Traces")
@@ -1513,4 +1995,7 @@ def plot_traces_poly(grid, layers_geo, layers_speed, first_arrivals, traces):
     plt.xlim(right=new_fight)
 
     plt.grid(True)
+    if axis_equal:
+        plt.axis("equal")
+
     plt.show()
