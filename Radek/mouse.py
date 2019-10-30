@@ -20,13 +20,17 @@ def event_swap_buttons(event, event_type):
     :param even_type: QEvent.MouseButtonPress, QEvent.MouseButtonRelease, QEvent.MouseMove
     :return: QMouseEvent with swaped buttons parameters.
     """
-    button = Event.Left if event.button() == Event.Right else Event.Right
+    button = event.button()
+    if event.button() == Event.Right:
+        button = Event.Left
+    elif event.button() == Event.Left:
+        button = Event.Right
     left_flag = bool( event.buttons() & Event.Left)
     right_flag = bool( event.buttons() & Event.Right)
 
     new_buttons = event.buttons()
     # set the swapped flags
-    new_buttons = new_buttons & (~Event.Left) + Event.Left * right_flag
-    new_buttons = new_buttons & (~Event.Right) + Event.Right * left_flag
+    new_buttons = (new_buttons & ~Event.Left) | Event.Left * right_flag
+    new_buttons = (new_buttons & ~Event.Right) | Event.Right * left_flag
     new_event = QtGui.QMouseEvent(event_type, event.localPos(), button, new_buttons, event.modifiers())
     return new_event

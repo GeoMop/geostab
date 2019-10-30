@@ -4,6 +4,10 @@ import pandas as pd
 import math
 
 
+# todo: jenom pro testovani
+x_fake = 0.0
+
+
 def parse(file_name):
     ret = {"warnings": [],
            "errors": [],
@@ -110,6 +114,9 @@ def _add_electrode_group(electrode_groups, gallery, wall, height):
 
 
 def _add_electrode(group, id, offset, x, y, z):
+    # todo: jenom pro testovani
+    global x_fake
+
     def conv(v):
         if type(v) is float:
             if math.isnan(v):
@@ -125,7 +132,18 @@ def _add_electrode(group, id, offset, x, y, z):
     y = conv(y)
     z = conv(z)
 
-    if (offset is None) or (x is None) or (y is None) or (z is None):
+    # if (offset is None) or (x is None) or (y is None) or (z is None):
+    #     return
+
+    # todo: jenom pro testovani
+    if (offset is None):
         return
+    if x is None:
+        x = x_fake
+        x_fake += 1.0
+    if y is None:
+        y = 0.0
+    if z is None:
+        z = 0.0
 
     group.electrodes.append(Electrode(id=id, offset=offset, x=x, y=y, z=z))
