@@ -898,7 +898,7 @@ def plot_depth_speed(layers_list, title="Velocity profile"):
 # forward first arrival, layers are defined as polylines
 ########################################################
 
-def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, return_traces=True, check_inputs=True, max_depth = 100, min_alpha0_span = 1e-5, xtol=1e-10, test_traces=False):
+def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, evanescent_wave=False, return_traces=True, check_inputs=True, max_depth = 100, min_alpha0_span = 1e-5, xtol=1e-10, test_traces=False):
     """
     Compute first arrivals from layers definition. Layers are defined as polylines.
     :param grid: list of points, where layers geometry is defined, must be rising sequence
@@ -906,6 +906,7 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
     :param layers_speed: list of speeds in particular layers
     ([surface speed, layer 0 speed, ..., layer n - 1 speed, speed below last layer])
     :param required_first_arrival: list of (source_location, receiver_location)
+    :param evanescent_wave: if True incorporate evanescent wave
     :param return_traces: if True returns traces for graphical representation
     :param check_inputs: if True checks inputs for errors
     :return: ({(source_location, receiver_location) -> first_arrival}, traces)
@@ -1362,6 +1363,9 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
 
                 if f_min < 0.0:
                     find_path_lay3(lay, seg, fun2, *min_max(alpha0_2, alpha0_max), depth, source_loc, hit_seg_list)
+
+                    if evanescent_wave:
+                        find_path_evan(lay, seg, fun2, alpha0_2, alpha0_2, depth, source_loc, hit_seg_list)
                 else:
                     find_path_lay3(lay, seg, fun2, *min_max(alpha0_min, alpha0_max), depth, source_loc, hit_seg_list)
 
@@ -1460,6 +1464,92 @@ def forward_fa_poly(grid, layers_geo, layers_speed, required_first_arrival, retu
                     find_path_lay(lay + 1, seg, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
                 else:
                     find_path_grid(lay, seg + 1, fun2, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list)
+
+    def find_path_evan(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
+        pos_min, dir_min, tr_min, time_min = fun(alpha0_min)
+
+        # segment points
+        pa = V2((grid[seg], layers_geo[lay][seg]))
+        pb = V2((grid[seg + 1], layers_geo[lay][seg + 1]))
+
+        t = normalize(pb - pa)
+        cos = dot(dir_min, t)
+
+        sin = math.sqrt(1 - cos ** 2)
+
+        # upward/downward ray
+        if vec_ori(t, dir_min) > 0.0:
+            speed = layers_speed[lay + 1]
+        else:
+            speed = layers_speed[lay]
+            sin = -sin
+
+        # rotation matrix for next segments
+        rot_x = V2((cos, -sin))
+        rot_y = V2((sin, cos))
+
+        # right/left ray
+        if cos > 0:
+            inc = 1
+            s = pos_min
+            d = pb - pos_min
+        else:
+            inc = -1
+            s = pa
+            d = pos_min - pa
+
+        @fun_cache
+        def fun2(alpha0):
+            new_pos = s + d * alpha0
+
+            if compute_traces:
+                tr = [tr_min[0] + [new_pos[0]], tr_min[1] + [new_pos[1]]]
+            else:
+                tr = tr_min
+
+            time = time_min + norm(new_pos - pos_min) / speed
+
+            return new_pos, dir_min, tr, time
+
+        find_path_lay3(lay, seg, fun2, 0.0, 1.0, depth, source_loc, hit_seg_list)
+
+        # next segments right or left
+        seg_n = seg + inc
+        fun_p = fun2
+        while 0 <= seg_n < len(grid) - 1:
+            hit_seg_list = hit_seg_list + [(lay, seg_n)]
+
+            def ff():
+                nonlocal fun_p
+
+                pa_n = V2((grid[seg_n], layers_geo[lay][seg_n]))
+                pb_n = V2((grid[seg_n + 1], layers_geo[lay][seg_n + 1]))
+                s_n = pa_n
+                d_n = pb_n - pa_n
+
+                t = normalize(d_n)
+                dir = V2((dot(rot_x, t), dot(rot_y, t)))
+
+                pos_p, _, tr_p, time_p = fun_p(1.0) if inc > 0 else fun_p(0.0)
+
+                @fun_cache
+                def fun2(alpha0):
+                    new_pos = s_n + d_n * alpha0
+
+                    if compute_traces:
+                        tr = [tr_p[0] + [new_pos[0]], tr_p[1] + [new_pos[1]]]
+                    else:
+                        tr = tr_p
+
+                    time = time_p + norm(new_pos - pos_p) / speed
+                    return new_pos, dir, tr, time
+
+                find_path_lay3(lay, seg_n, fun2, 0.0, 1.0, depth, source_loc, hit_seg_list)
+
+                fun_p = fun2
+
+            ff()
+            seg_n += inc
 
 
     def find_path_grid(lay, seg, fun, alpha0_min, alpha0_max, depth, source_loc, hit_seg_list):
