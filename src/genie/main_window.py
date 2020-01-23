@@ -13,7 +13,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.setWindowTitle("geostab")
+        self.setWindowTitle("Genie")
 
         self.resize(1200, 800)
 

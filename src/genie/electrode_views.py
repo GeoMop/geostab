@@ -23,7 +23,7 @@ class ElectrodeGroupModel(QtCore.QAbstractItemModel):
 
         elif role == QtCore.Qt.DecorationRole:
             if index.column() == 0:
-                return QtCore.QVariant(Region.colors[index.row() % len(Region.colors)])
+                return QtCore.QVariant(Region.colors[index.row() % len(Region.colors) + 1])
 
         return QtCore.QVariant()
 

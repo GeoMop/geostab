@@ -288,6 +288,8 @@ class GsPolygon(QtWidgets.QGraphicsPolygonItem):
     def __init__(self, polygon):
         self.polygon_data = polygon
         #polygon.g_polygon = self
+        self.painter_path = None
+        self.depth = 0
         super().__init__()
         #self.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations, True)
         #self.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, True)
@@ -298,7 +300,6 @@ class GsPolygon(QtWidgets.QGraphicsPolygonItem):
 
         self.setCursor(Cursor.polygon)
         self.setAcceptedMouseButtons(QtCore.Qt.LeftButton | QtCore.Qt.RightButton)
-        self.setZValue(self.STD_ZVALUE)
         self.update()
 
     def update(self):
@@ -310,6 +311,8 @@ class GsPolygon(QtWidgets.QGraphicsPolygonItem):
 
         self.setPolygon(qtpolygon)
 
+        self.painter_path = self._get_polygon_draw_path(self.polygon_data)
+
         color = Region.none.color
         if self.scene():
             regions = self.scene().regions
@@ -317,6 +320,9 @@ class GsPolygon(QtWidgets.QGraphicsPolygonItem):
             reg_id = regions.get_shape_region(key)
             color = regions.regions[reg_id].color
         self.region_brush = GsPolygon.brush_table(color)
+
+        self.depth = self.polygon_data.depth()
+        self.setZValue(self.STD_ZVALUE + self.depth)
 
         super().update()
 
@@ -331,18 +337,52 @@ class GsPolygon(QtWidgets.QGraphicsPolygonItem):
             painter.setBrush(brush)
         else:
             painter.setBrush(self.region_brush)
-        painter.drawPolygon(self.polygon())
+        painter.drawPath(self.painter_path)
 
     def itemChange(self, change, value):
         #print("change: ", change, "val: ", value)
         #if change == QtWidgets.QGraphicsItem.ItemPositionHasChanged:
         #    self.pt.set_xy(value.x(), value.y())
-        if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
-            if self.isSelected():
-                self.setZValue(self.SELECTED_ZVALUE)
-            else:
-                self.setZValue(self.STD_ZVALUE)
+        # if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
+        #     if self.isSelected():
+        #         self.setZValue(self.SELECTED_ZVALUE)
+        #     else:
+        #         self.setZValue(self.STD_ZVALUE)
         return super().itemChange(change, value)
+
+    @staticmethod
+    def _get_wire_oriented_vertices(wire):
+        """
+        Follow the wire segments and get the list of its vertices duplicating the first/last point.
+        return: array, shape: n_vtx, 2
+        """
+        seggen = wire.segments()
+        vtxs = []
+        for seg, side in seggen:
+            # Side corresponds to the end point of the segment. (Indicating also on which side thenwire lies.)
+            if not vtxs:
+                # first segment - add both vertices, so the loop is closed at the end.
+                other_side = not side
+                vtxs.append(seg.vtxs[other_side].xy)
+            vtxs.append(seg.vtxs[side].xy)
+        return np.array(vtxs)
+
+    @classmethod
+    def _add_to_painter_path(cls, path, wire):
+        vtxs = cls._get_wire_oriented_vertices(wire)
+        point_list = [QtCore.QPointF(vtxx, -vtxy) for vtxx, vtxy in vtxs]
+        sub_poly = QtGui.QPolygonF(point_list)
+        path.addPolygon(sub_poly)
+
+    def _get_polygon_draw_path(self, polygon):
+        """Get the path to draw the polygon in, i.e. the outer boundary and inner boundaries.
+        The path approach allows holes in polygons and therefore flat depth for polygons (Odd-even paint rule)"""
+        complex_path = QtGui.QPainterPath()
+        self._add_to_painter_path(complex_path, polygon.outer_wire)
+        # Subtract all inner parts
+        for inner_wire in polygon.outer_wire.childs:
+            self._add_to_painter_path(complex_path, inner_wire)
+        return complex_path
 
 
 class Selection():
